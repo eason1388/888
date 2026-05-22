@@ -122,9 +122,101 @@ document.addEventListener('DOMContentLoaded', async function() {
     // The manifest bytes are ours; SRI protects against CDN compromise, not this.
     template = template.replace(/\s+integrity="[^"]*"/gi, '').replace(/\s+crossorigin="[^"]*"/gi, '');
 
+    template = template.replace(
+      "const d = new Date(history[0].date);\n      d.setDate(d.getDate() + 1);",
+      "const d = window.__lottoGetNextDrawDate(history[0].date, game.id);"
+    );
+    template = template.replace(
+      "const nextDate = new Date(lastDate);\n    nextDate.setDate(nextDate.getDate() + 1);",
+      "const nextDate = window.__lottoGetNextDrawDate(lastDate, game.id);"
+    );
+    template = template.replace(
+      "{history[0].periodLabel ? `${game.nextDate}` : `第 ${history[0].period + 1} 期`}",
+      "{window.__lottoFormatNextDrawLabel(history[0], game)}"
+    );
+    template = template.replace(
+      "function dayGanzhi(year, month, day){\n  const target = Date.UTC(year, month - 1, day);\n  const anchor = Date.UTC(2000, 0, 1);\n  const days = Math.floor((target - anchor) / 86400000);\n  const ganIdx = (((4 + days) % 10) + 10) % 10;\n  const zhiIdx = (((6 + days) % 12) + 12) % 12;\n  return { ganIdx, zhiIdx };\n}",
+      "const GANZHI_MODE_META = { standard: { label:'主流曆法版', anchorGanIdx:4, anchorZhiIdx:6 }, taiwan: { label:'台灣農民曆參考版', anchorGanIdx:0, anchorZhiIdx:0 } };\nfunction dayGanzhi(year, month, day, mode = 'standard'){\n  const target = Date.UTC(year, month - 1, day);\n  const anchor = Date.UTC(2000, 0, 1);\n  const days = Math.floor((target - anchor) / 86400000);\n  const meta = GANZHI_MODE_META[mode] || GANZHI_MODE_META.standard;\n  const ganIdx = (((meta.anchorGanIdx + days) % 10) + 10) % 10;\n  const zhiIdx = (((meta.anchorZhiIdx + days) % 12) + 12) % 12;\n  return { ganIdx, zhiIdx };\n}"
+    );
+    template = template.replace(
+      "function App(){\n  const [gameId, setGameId] = useState('d539');\n  const game = GAMES[gameId];",
+      "function App(){\n  const [gameId, setGameId] = useState('d539');\n  const [ganzhiMode, setGanzhiMode] = useState(() => {\n    try { return localStorage.getItem('lotto_ganzhi_mode') || 'standard'; }\n    catch { return 'standard'; }\n  });\n  const game = GAMES[gameId];"
+    );
+    template = template.replace(
+      "  const prevDrawCountRef = useRef(currentUserDraws.length);",
+      "  const prevDrawCountRef = useRef(currentUserDraws.length);\n  useEffect(() => {\n    try { localStorage.setItem('lotto_ganzhi_mode', ganzhiMode); }\n    catch {}\n  }, [ganzhiMode]);"
+    );
+    template = template.replace(
+      "const gz = dayGanzhi(nextDate.getFullYear(), nextDate.getMonth()+1, nextDate.getDate());",
+      "const gz = dayGanzhi(nextDate.getFullYear(), nextDate.getMonth()+1, nextDate.getDate(), ganzhiMode);"
+    );
+    template = template.replace(
+      "  }, [history, game.range]);",
+      "  }, [history, game.range, ganzhiMode]);"
+    );
+    template = template.replace(
+      "{strategy === 'ganzhi' && ganzhiCtx && (\n              <GanzhiWhy ctx={ganzhiCtx} history={history} prediction={prediction} game={game} />\n            )}",
+      "{strategy === 'ganzhi' && ganzhiCtx && (\n              <GanzhiWhy ctx={ganzhiCtx} history={history} prediction={prediction} game={game} mode={ganzhiMode} onModeChange={setGanzhiMode} />\n            )}"
+    );
+    template = template.replace(
+      "function GanzhiWhy({ctx, history, prediction, game}){",
+      "function GanzhiWhy({ctx, history, prediction, game, mode, onModeChange}){"
+    );
+    template = template.replace(
+      "  const ganWX = GAN_WUXING[ganIdx];\n  const zhiWX = ZHI_WUXING[zhiIdx];",
+      "  const ganWX = GAN_WUXING[ganIdx];\n  const zhiWX = ZHI_WUXING[zhiIdx];\n  const modeLabel = mode === 'taiwan' ? '台灣農民曆參考版' : '主流曆法版';"
+    );
+    template = template.replace(
+      "const gz = dayGanzhi(h.date.getFullYear(), h.date.getMonth()+1, h.date.getDate());",
+      "const gz = dayGanzhi(h.date.getFullYear(), h.date.getMonth()+1, h.date.getDate(), mode);"
+    );
+    template = template.replace(
+      "  }, [history, game]);",
+      "  }, [history, game, mode]);"
+    );
+    template = template.replace(
+      "      {/* 推算過程 */}",
+      "      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,margin:'8px 0 12px',flexWrap:'wrap'}}>\n        <div style={{fontSize:10.5,color:'var(--fg-3)',fontFamily:'var(--mono)',letterSpacing:'0.08em'}}>目前模式: <span style={{color:'var(--gold)'}}>{modeLabel}</span></div>\n        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>\n          <button className=\"btn ghost\" style={{padding:'6px 10px',fontSize:11,borderColor: mode === 'standard' ? 'var(--gold)' : 'var(--line)',color: mode === 'standard' ? 'var(--gold)' : 'var(--fg-2)'}} onClick={() => onModeChange('standard')}>主流曆法版</button>\n          <button className=\"btn ghost\" style={{padding:'6px 10px',fontSize:11,borderColor: mode === 'taiwan' ? 'var(--gold)' : 'var(--line)',color: mode === 'taiwan' ? 'var(--gold)' : 'var(--fg-2)'}} onClick={() => onModeChange('taiwan')}>台灣農民曆參考版</button>\n        </div>\n      </div>\n\n      <div style={{fontSize:10.5,color:'var(--fg-3)',lineHeight:1.55,marginBottom:12}}>\n        {mode === 'standard' ? '主流曆法版採用多數通用萬年曆可對上的日柱循環。' : '台灣農民曆參考版用來貼近部分台灣農民曆網站顯示結果，和通用萬年曆可能不同。'}\n      </div>\n\n      {/* 推算過程 */}"
+    );
+    template = template.replace("const [gameId, setGameId] = useState('big');", "const [gameId, setGameId] = useState('d539');");
+    template = template.replace("const [analysisWindow, setAnalysisWindow] = useState(GAMES.big.defaultWindow);", "const [analysisWindow, setAnalysisWindow] = useState(GAMES.d539.defaultWindow);");
+    template = template.replace(
+      "{Object.values(GAMES).map(g => (",
+      "{['d539', 'big'].map(id => { const g = GAMES[id]; return ("
+    );
+    template = template.replace(
+      "        ))}",
+      "        ); })}"
+    );
+
     const resourceScript = '<script>window.__resources = ' +
       JSON.stringify(resourceMap).split('</' + 'script>').join('<\\/' + 'script>') +
       ';</' + 'script>';
+    const helperScript = `<script>
+      window.__lottoGetNextDrawDate = function(inputDate, gameId) {
+        const d = new Date(inputDate);
+        if (isNaN(d)) return new Date();
+        d.setHours(0, 0, 0, 0);
+        const next = new Date(d);
+        next.setDate(next.getDate() + 1);
+        if (gameId === 'd539') {
+          while (next.getDay() === 0) next.setDate(next.getDate() + 1);
+          return next;
+        }
+        while (![2, 5].includes(next.getDay())) next.setDate(next.getDate() + 1);
+        return next;
+      };
+      window.__lottoFormatNextDrawLabel = function(latest, game) {
+        if (!latest) return '';
+        if (latest.date) {
+          const next = window.__lottoGetNextDrawDate(latest.date, game.id);
+          return next.getFullYear() + '.' +
+            String(next.getMonth() + 1).padStart(2, '0') + '.' +
+            String(next.getDate()).padStart(2, '0');
+        }
+        return '第 ' + (latest.period + 1) + ' 期';
+      };
+    <\/script>`;
     const responsiveStyle = `<style>
       @media (max-width: 900px) {
         .app { max-width: none !important; padding: 20px 14px 48px !important; }
@@ -186,7 +278,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const headOpen = template.match(/<head[^>]*>/i);
     if (headOpen) {
       const i = headOpen.index + headOpen[0].length;
-      template = template.slice(0, i) + resourceScript + responsiveStyle + template.slice(i);
+      template = template.slice(0, i) + resourceScript + helperScript + responsiveStyle + template.slice(i);
     }
 
     // Parse the template and swap the root element. Scripts inserted via
