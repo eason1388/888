@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     );
     template = template.replace(
       "function dayGanzhi(year, month, day){\n  const target = Date.UTC(year, month - 1, day);\n  const anchor = Date.UTC(2000, 0, 1);\n  const days = Math.floor((target - anchor) / 86400000);\n  const ganIdx = (((4 + days) % 10) + 10) % 10;\n  const zhiIdx = (((6 + days) % 12) + 12) % 12;\n  return { ganIdx, zhiIdx };\n}",
-      "const GANZHI_MODE_META = { standard: { label:'主流曆法版', anchorGanIdx:4, anchorZhiIdx:6 }, taiwan: { label:'台灣農民曆參考版', anchorGanIdx:0, anchorZhiIdx:0 } };\nfunction dayGanzhi(year, month, day, mode = 'standard'){\n  const target = Date.UTC(year, month - 1, day);\n  const anchor = Date.UTC(2000, 0, 1);\n  const days = Math.floor((target - anchor) / 86400000);\n  const meta = GANZHI_MODE_META[mode] || GANZHI_MODE_META.standard;\n  const ganIdx = (((meta.anchorGanIdx + days) % 10) + 10) % 10;\n  const zhiIdx = (((meta.anchorZhiIdx + days) % 12) + 12) % 12;\n  return { ganIdx, zhiIdx };\n}"
+      "const GANZHI_MODE_META = { standard: { label:'主流曆法版', anchorGanIdx:4, anchorZhiIdx:6 }, taiwan: { label:'台灣農民曆參考版', anchorGanIdx:0, anchorZhiIdx:0 } };\nfunction dayGanzhi(year, month, day, mode = 'standard'){\n  const target = Date.UTC(year, month - 1, day);\n  const anchor = Date.UTC(2000, 0, 1);\n  const days = Math.floor((target - anchor) / 86400000);\n  const meta = GANZHI_MODE_META[mode] || GANZHI_MODE_META.standard;\n  const ganIdx = (((meta.anchorGanIdx + days) % 10) + 10) % 10;\n  const zhiIdx = (((meta.anchorZhiIdx + days) % 12) + 12) % 12;\n  return { ganIdx, zhiIdx };\n}\nconst mode = 'standard';"
     );
     template = template.replace(
       "  const [gameId, setGameId] = useState('big');",
