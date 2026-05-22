@@ -163,8 +163,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       "function GanzhiWhy({ctx, history, prediction, game, mode, onModeChange}){"
     );
     template = template.replace(
-      "  const ganWX = GAN_WUXING[ganIdx];\n  const zhiWX = ZHI_WUXING[zhiIdx];",
-      "  const ganWX = GAN_WUXING[ganIdx];\n  const zhiWX = ZHI_WUXING[zhiIdx];\n  const modeLabel = mode === 'taiwan' ? '台灣農民曆參考版' : '主流曆法版';"
+      "  const ganWX = GAN_WUXING[ganIdx];\n  const zhiWX = ZHI_WUXING[zhiIdx];\n\n  // 歷史回測: 對最近 100 期算每期的「當日干支候選 5 碼」, 比對實際開出",
+      "  const ganWX = GAN_WUXING[ganIdx];\n  const zhiWX = ZHI_WUXING[zhiIdx];\n  const modeLabel = mode === 'taiwan' ? '台灣農民曆參考版' : '主流曆法版';\n\n  // 歷史回測: 對最近 100 期算每期的「當日干支候選 5 碼」, 比對實際開出"
     );
     template = template.replace(
       "const gz = dayGanzhi(h.date.getFullYear(), h.date.getMonth()+1, h.date.getDate());",
