@@ -362,31 +362,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     let cancelled = false;
     if (!summaryRunId) return () => { cancelled = true; };
 
-    const cacheKey = (() => {
-      const latest = history[0];
-      if (!latest) return '';
-      const latestStamp = latest.date ? latest.date.getTime() : latest.period;
-      return ['lotto-summary-manual-v1', game.id, history.length, latestStamp, summaryStartDate].join(':');
-    })();
-
-    try {
-      const cachedText = cacheKey ? localStorage.getItem(cacheKey) : null;
-      if (cachedText) {
-        const cached = JSON.parse(cachedText);
-        if (cached && Array.isArray(cached.rows)) {
-          setSummaryHistoryCache(cached.rows);
-          setSummaryHistoryStatus({ phase: 'ready', progress: cached.rows.length, total: cached.rows.length });
-          return () => { cancelled = true; };
-        }
-      }
-    } catch {}
-
-    const fallbackStart = '2026-05-13';
+      const fallbackStart = '2026-05-13';
     const startText = /^\d{4}-\d{2}-\d{2}$/.test(summaryStartDate || '') ? summaryStartDate : fallbackStart;
     const cutoffTime = new Date(startText + 'T00:00:00').getTime();
     const sampleIndexes = [];
     const summaryHistoryWindow = Math.min(analysisWindow, 120);
-    const maxSamples = Math.min(12, history.length);
+      const maxSamples = Math.min(20, history.length);
     for (let i = 0; i < maxSamples; i++) {
       const actual = history[i];
       if (!actual || !actual.date || actual.date.getTime() < cutoffTime) continue;
@@ -427,7 +408,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           periodLabel: actual.periodLabel || ('#' + actual.period),
           picks: priorTop2.map(row => row.n),
           draw: actual.draw.slice(),
-          hits: priorTop2.filter(row => actual.draw.includes(row.n)).length
+          hits: priorTop2.filter(row => actual.draw.includes(row.n)).length,
+          matched: priorTop2.map(row => row.n).filter(n => actual.draw.includes(n))
         });
         setSummaryHistoryCache(rows.slice());
         setSummaryHistoryStatus({ phase: 'running', progress: cursor + 1, total: sampleIndexes.length });
@@ -435,7 +417,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       if (cancelled) return;
       setSummaryHistoryStatus({ phase: 'ready', progress: rows.length, total: rows.length });
-      try { if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify({ rows })); } catch {}
     }, 120);
 
     return () => { cancelled = true; };
@@ -452,14 +433,25 @@ document.addEventListener('DOMContentLoaded', async function() {
     const hitAny = eligible.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
     const hitBoth = eligible.reduce((sum, row) => sum + (row.hits === 2 ? 1 : 0), 0);
     const totalHits = eligible.reduce((sum, row) => sum + row.hits, 0);
+    const perNumberHits = {};
+    eligible.forEach((row) => {
+      (row.picks || []).forEach((n) => {
+        if (!perNumberHits[n]) perNumberHits[n] = { n, hits: 0, samples: 0 };
+        perNumberHits[n].samples += 1;
+        if ((row.draw || []).includes(n)) perNumberHits[n].hits += 1;
+      });
+    });
     return {
       cutoffLabel: formatSummaryDateLabel(cutoff),
       samples,
       hitRate: samples ? hitAny / samples : 0,
       bothRate: samples ? hitBoth / samples : 0,
       avgHits: samples ? totalHits / samples : 0,
-      recent: eligible.slice(0, 6).map(({ dateLabel, periodLabel, picks, draw, hits }) => ({ dateLabel, periodLabel, picks, draw, hits })),
-      perfectRecent: eligible.filter(row => row.hits === 2).slice(0, 6).map(({ dateLabel, periodLabel, picks, draw, hits }) => ({ dateLabel, periodLabel, picks, draw, hits })),
+      recent: eligible.slice(0, 10).map(({ dateLabel, periodLabel, picks, draw, hits, matched }) => ({ dateLabel, periodLabel, picks, draw, hits, matched })),
+      perfectRecent: eligible.filter(row => row.hits === 2).slice(0, 10).map(({ dateLabel, periodLabel, picks, draw, hits, matched }) => ({ dateLabel, periodLabel, picks, draw, hits, matched })),
+      perNumber: Object.values(perNumberHits)
+        .map((row) => ({ ...row, hitRate: row.samples ? row.hits / row.samples : 0 }))
+        .sort((a, b) => b.hitRate - a.hitRate || b.hits - a.hits || a.n - b.n),
       phase: summaryHistoryStatus.phase,
       progress: summaryHistoryStatus.progress,
       total: summaryHistoryStatus.total
@@ -578,12 +570,12 @@ document.addEventListener('DOMContentLoaded', async function() {
               </div>
               <div style={{marginTop:12,padding:'10px',border:'1px solid var(--line)',borderRadius:10,background:'var(--bg-3)'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
-                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)',letterSpacing:'0.08em'}}>最近命中明細</div>
-                  <div style={{fontSize:10,color:'var(--fg-3)'}}>顯示最近 6 期摘要回測結果</div>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)',letterSpacing:'0.08em'}}>最近 10 期回測明細</div>
+                  <div style={{fontSize:10,color:'var(--fg-3)'}}>直接顯示每期預測 2 碼、實際命中號碼與 0/2、1/2、2/2</div>
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:6}}>
                   {summaryHitStats.recent.length ? summaryHitStats.recent.map((row, idx) => (
-                    <div key={idx} style={{display:'grid',gridTemplateColumns:'72px 64px 1fr 1fr 48px',gap:8,alignItems:'center',padding:'8px 0',borderTop: idx ? '1px solid var(--line)' : 'none'}}>
+                    <div key={idx} style={{display:'grid',gridTemplateColumns:'72px 64px 1fr 1fr 72px',gap:8,alignItems:'center',padding:'8px 0',borderTop: idx ? '1px solid var(--line)' : 'none'}}>
                       <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>{row.dateLabel}</div>
                       <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>{row.periodLabel}</div>
                       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
@@ -592,10 +584,34 @@ document.addEventListener('DOMContentLoaded', async function() {
                       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
                         {row.draw.map(n => <span key={n} className={row.picks.includes(n) ? "markov-pill hot" : "markov-pill from"} style={{minWidth:28}}>{formatNum(n)}</span>)}
                       </div>
-                      <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color: row.hits === 2 ? 'var(--green)' : row.hits === 1 ? 'var(--gold)' : 'var(--fg-3)'}}>{row.hits}/2</div>
+                      <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                        <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color: row.hits === 2 ? 'var(--green)' : row.hits === 1 ? 'var(--gold)' : 'var(--fg-3)'}}>{row.hits}/2</div>
+                        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>
+                          {row.matched && row.matched.length ? row.matched.map(formatNum).join(' ') : '未中'}
+                        </div>
+                      </div>
                     </div>
                   )) : (
                     <div style={{fontSize:11,color:'var(--fg-3)',padding:'4px 0'}}>按下開始回測後，這裡會顯示最近回測結果。</div>
+                  )}
+                </div>
+              </div>
+              <div style={{marginTop:12,padding:'10px',border:'1px solid var(--line)',borderRadius:10,background:'var(--bg-3)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)',letterSpacing:'0.08em'}}>2碼歷史命中率</div>
+                  <div style={{fontSize:10,color:'var(--fg-3)'}}>統計回測期間內，每個被預測號碼各自的命中率</div>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))',gap:8}}>
+                  {summaryHitStats.perNumber.length ? summaryHitStats.perNumber.slice(0, 8).map((row) => (
+                    <div key={row.n} style={{padding:'10px 8px',border:'1px solid var(--line)',borderRadius:8,background:'var(--bg-2)'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+                        <span className="markov-pill hot" style={{minWidth:28}}>{formatNum(row.n)}</span>
+                        <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:'var(--gold)'}}>{(row.hitRate * 100).toFixed(0)}%</div>
+                      </div>
+                      <div style={{marginTop:6,fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>命中 {row.hits} / {row.samples}</div>
+                    </div>
+                  )) : (
+                    <div style={{fontSize:11,color:'var(--fg-3)',padding:'4px 0'}}>執行回測後，這裡會顯示 2 碼的歷史命中率。</div>
                   )}
                 </div>
               </div>
