@@ -991,13 +991,15 @@ document.addEventListener('DOMContentLoaded', async function() {
               progress: 0,
               total: 0
             },
+            syncSummaryFromCard() {
+              const result = buildStandaloneStats(bridge.summaryStartDate);
+              bridge.summaryTop2 = result.summaryTop2;
+              bridge.summaryHitStats = result.summaryHitStats;
+              notifySummaryRefresh();
+            },
             setSummaryStartDate(value) {
               bridge.summaryStartDate = normalizeDate(value) || START_FALLBACK;
-              bridge.summaryHitStats = Object.assign({}, bridge.summaryHitStats, {
-                cutoffLabel: formatCutoffLabel(bridge.summaryStartDate),
-                phase: 'idle'
-              });
-              notifySummaryRefresh();
+              bridge.syncSummaryFromCard();
             },
             runSummaryBacktest() {
               bridge.summaryHitStats = Object.assign({}, bridge.summaryHitStats, {
@@ -1006,20 +1008,26 @@ document.addEventListener('DOMContentLoaded', async function() {
               });
               notifySummaryRefresh();
               window.setTimeout(() => {
-                const result = buildStandaloneStats(bridge.summaryStartDate);
-                bridge.summaryTop2 = result.summaryTop2;
-                bridge.summaryHitStats = result.summaryHitStats;
-                notifySummaryRefresh();
+                bridge.syncSummaryFromCard();
               }, 16);
             }
           };
           window.__lottoSummaryBridge = bridge;
+          window.setTimeout(() => bridge.syncSummaryFromCard(), 60);
+          window.setTimeout(() => bridge.syncSummaryFromCard(), 400);
+          window.setTimeout(() => bridge.syncSummaryFromCard(), 1200);
           return bridge;
         }
 
         ensureStandaloneBridge();
-        document.addEventListener('DOMContentLoaded', notifySummaryRefresh);
-        window.addEventListener('load', notifySummaryRefresh);
+        document.addEventListener('DOMContentLoaded', () => {
+          const bridge = ensureStandaloneBridge();
+          bridge.syncSummaryFromCard();
+        });
+        window.addEventListener('load', () => {
+          const bridge = ensureStandaloneBridge();
+          bridge.syncSummaryFromCard();
+        });
       })();
     <\/script>`;
     const summaryEnhancerScript = `<script>
