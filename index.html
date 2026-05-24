@@ -996,7 +996,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           bothRate: stats.bothRate,
           hitRate: stats.hitRate,
           avgHits: stats.avgHits,
-          recent: stats.recent
+          recent: stats.recent,
+          perNumber: stats.perNumber || []
         });
         if (mount.dataset.signature === signature) return;
         const statusText = stats.phase === 'running'
@@ -1006,17 +1007,24 @@ document.addEventListener('DOMContentLoaded', async function() {
             : '詳細回測改成手動啟動，避免拖慢整頁與手機。';
         const recentHtml = (stats.recent || []).length
           ? stats.recent.map((row) =>
-              '<div class="summary-hit-row" style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 44px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:10px;">' +
+              '<div class="summary-hit-row" style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 72px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:10px;">' +
                 '<div style="font-family:var(--mono);color:var(--fg-3);">' + row.dateLabel + '</div>' +
                 '<div style="font-family:var(--mono);color:var(--fg-3);">' + row.periodLabel + '</div>' +
                 '<div style="font-size:10px;color:var(--fg-2);">' +
                   row.picks.map((n) => String(n).padStart(2, '0')).join(' ') + ' → ' +
                   row.draw.map((n) => String(n).padStart(2, '0')).join(' ') +
                 '</div>' +
-                '<div style="font:700 12px var(--mono);color:' + (row.hits >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';">' + row.hits + '/2</div>' +
+                '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;"><div style="font:700 12px var(--mono);color:' + (row.hits >= 2 ? 'var(--green)' : row.hits >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';">' + row.hits + '/2</div><div style="font:10px var(--mono);color:var(--fg-3);">' + (((row.matched || []).length ? row.matched : []).map((n) => String(n).padStart(2, '0')).join(' ') || '未中') + '</div></div>' +
               '</div>'
             ).join('')
-          : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">按下開始回測後，這裡會顯示最近命中明細。</div>';
+          : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">按下開始回測後，這裡會顯示最近回測結果。</div>';
+        const perNumberHtml = (stats.perNumber || []).length
+          ? '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:8px;margin-top:12px;">' +
+              (stats.perNumber || []).slice(0, 8).map((row) =>
+                '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span class="markov-pill hot" style="min-width:28px;">' + String(row.n).padStart(2, '0') + '</span><div style="font:700 14px var(--mono);color:var(--gold);">' + (((row.hitRate || 0) * 100).toFixed(0)) + '%</div></div><div style="margin-top:6px;font:10px var(--mono);color:var(--fg-3);">命中 ' + (row.hits || 0) + ' / ' + (row.samples || 0) + '</div></div>'
+              ).join('') +
+            '</div>'
+          : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">執行回測後，這裡會顯示 2 碼的歷史命中率。</div>';
         mount.innerHTML =
           '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
             '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">回測起始日</div>' +
@@ -1031,9 +1039,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">樣本</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + (stats.samples || 0) + ' 期</div></div>' +
           '</div>' +
           '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
-            '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);margin-bottom:8px;">最近命中明細</div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近 10 期回測明細</div><div style="font-size:10px;color:var(--fg-3);">直接顯示每期預測 2 碼、實際命中號碼與 0/2、1/2、2/2</div></div>' +
             recentHtml +
-          '</div>';
+          '</div>' +
+          '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">2碼歷史命中率</div><div style="font-size:10px;color:var(--fg-3);">統計回測期間內，每個被預測號碼各自的命中率</div></div>' + perNumberHtml + '</div>';
         mount.dataset.signature = signature;
         const input = mount.querySelector('[data-summary-start]');
         if (input && !input.dataset.bound) {
@@ -1093,7 +1102,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             bothRate: stats.bothRate || 0,
             hitRate: stats.hitRate || 0,
             avgHits: stats.avgHits || 0,
-            recent: stats.recent || []
+            recent: stats.recent || [],
+            perNumber: stats.perNumber || []
           });
           if (mount.dataset.signature === signature) return;
 
@@ -1104,17 +1114,24 @@ document.addEventListener('DOMContentLoaded', async function() {
               : '手動啟動，避免拖慢整頁與手機。';
           const recentHtml = (stats.recent || []).length
             ? stats.recent.map((row) =>
-                '<div class="summary-hit-row" style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 44px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:10px;">' +
+                '<div class="summary-hit-row" style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 72px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:10px;">' +
                   '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.dateLabel || '') + '</div>' +
                   '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.periodLabel || '') + '</div>' +
                   '<div style="font-size:10px;color:var(--fg-2);">' +
                     ((row.picks || []).map((n) => String(n).padStart(2, '0')).join(' ')) + ' → ' +
                     ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) +
                   '</div>' +
-                  '<div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';">' + (row.hits || 0) + '/2</div>' +
+                  '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;"><div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 2 ? 'var(--green)' : (row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';">' + (row.hits || 0) + '/2</div><div style="font:10px var(--mono);color:var(--fg-3);">' + ((((row.matched || []).length ? row.matched : []).map((n) => String(n).padStart(2, '0')).join(' ')) || '未中') + '</div></div>' +
                 '</div>'
               ).join('')
-            : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">按下開始回測後，這裡會顯示最近命中明細。</div>';
+            : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">按下開始回測後，這裡會顯示最近回測結果。</div>';
+          const perNumberHtml = (stats.perNumber || []).length
+            ? '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:8px;margin-top:12px;">' +
+                (stats.perNumber || []).slice(0, 8).map((row) =>
+                  '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span class="markov-pill hot" style="min-width:28px;">' + String(row.n).padStart(2, '0') + '</span><div style="font:700 14px var(--mono);color:var(--gold);">' + (((row.hitRate || 0) * 100).toFixed(0)) + '%</div></div><div style="margin-top:6px;font:10px var(--mono);color:var(--fg-3);">命中 ' + (row.hits || 0) + ' / ' + (row.samples || 0) + '</div></div>'
+                ).join('') +
+              '</div>'
+            : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">執行回測後，這裡會顯示 2 碼的歷史命中率。</div>';
 
           mount.innerHTML =
             '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
@@ -1130,9 +1147,10 @@ document.addEventListener('DOMContentLoaded', async function() {
               '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">樣本</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + (stats.samples || 0) + ' 期</div></div>' +
             '</div>' +
             '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
-              '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);margin-bottom:8px;">最近命中明細</div>' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近 10 期回測明細</div><div style="font-size:10px;color:var(--fg-3);">直接顯示每期預測 2 碼、實際命中號碼與 0/2、1/2、2/2</div></div>' +
               recentHtml +
-            '</div>';
+            '</div>' +
+            '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">2碼歷史命中率</div><div style="font-size:10px;color:var(--fg-3);">統計回測期間內，每個被預測號碼各自的命中率</div></div>' + perNumberHtml + '</div>';
 
           mount.dataset.signature = signature;
 
@@ -1210,7 +1228,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
           const stats = bridge.summaryHitStats || {};
           const dateValue = bridge.summaryStartDate || START_FALLBACK;
-          const recentRows = Array.isArray(stats.recent) ? stats.recent.slice(0, 6) : [];
+          const recentRows = Array.isArray(stats.recent) ? stats.recent.slice(0, 10) : [];
           const signature = JSON.stringify({
             dateValue,
             phase: stats.phase || 'idle',
@@ -1220,7 +1238,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             bothRate: stats.bothRate || 0,
             hitRate: stats.hitRate || 0,
             avgHits: stats.avgHits || 0,
-            recent: recentRows
+            recent: recentRows,
+            perNumber: stats.perNumber || []
           });
           if (mount.dataset.signature === signature) return true;
 
@@ -1233,7 +1252,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
           const recentHtml = recentRows.length
             ? recentRows.map((row, idx) =>
-                '<div style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 44px;gap:8px;align-items:center;padding:8px 0;' +
+                '<div style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 72px;gap:8px;align-items:center;padding:8px 0;' +
                 (idx ? 'border-top:1px solid var(--line);' : '') +
                 'font-size:10px;">' +
                   '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.dateLabel || '') + '</div>' +
@@ -1242,10 +1261,17 @@ document.addEventListener('DOMContentLoaded', async function() {
                     '<div>預測 ' + ((row.picks || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div>' +
                     '<div>實開 ' + ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div>' +
                   '</div>' +
-                  '<div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';">' + (row.hits || 0) + '/2</div>' +
+                  '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;"><div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 2 ? 'var(--green)' : (row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';">' + (row.hits || 0) + '/2</div><div style="font:10px var(--mono);color:var(--fg-3);">' + ((((row.matched || []).length ? row.matched : []).map((n) => String(n).padStart(2, '0')).join(' ')) || '未中') + '</div></div>' +
                 '</div>'
               ).join('')
-            : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">按下開始回測後，這裡會顯示最近命中明細。</div>';
+            : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">按下開始回測後，這裡會顯示最近回測結果。</div>';
+          const perNumberHtml = (stats.perNumber || []).length
+            ? '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:8px;">' +
+                (stats.perNumber || []).slice(0, 8).map((row) =>
+                  '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><span class="markov-pill hot" style="min-width:28px;">' + String(row.n).padStart(2, '0') + '</span><div style="font:700 14px var(--mono);color:var(--gold);">' + (((row.hitRate || 0) * 100).toFixed(0)) + '%</div></div><div style="margin-top:6px;font:10px var(--mono);color:var(--fg-3);">命中 ' + (row.hits || 0) + ' / ' + (row.samples || 0) + '</div></div>'
+                ).join('') +
+              '</div>'
+            : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">執行回測後，這裡會顯示 2 碼的歷史命中率。</div>';
 
           mount.innerHTML =
             '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
@@ -1262,11 +1288,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             '</div>' +
             '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
               '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
-                '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近命中明細</div>' +
-                '<div style="font-size:10px;color:var(--fg-3);">顯示最近 6 期摘要回測結果</div>' +
+                '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近 10 期回測明細</div>' +
+                '<div style="font-size:10px;color:var(--fg-3);">直接顯示每期預測 2 碼、實際命中號碼與 0/2、1/2、2/2</div>' +
               '</div>' +
               recentHtml +
-            '</div>';
+            '</div>' +
+            '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">2碼歷史命中率</div><div style="font-size:10px;color:var(--fg-3);">統計回測期間內，每個被預測號碼各自的命中率</div></div>' + perNumberHtml + '</div>';
 
           mount.dataset.signature = signature;
 
@@ -1559,6 +1586,168 @@ document.addEventListener('DOMContentLoaded', async function() {
     setTimeout(renderSummaryFallback, 1200);
     setTimeout(renderSummaryFallback, 2500);
   })();
+</script>
+
+<script>
+(() => {
+  const START_FALLBACK = '2026-05-13';
+
+  function findSummaryBody() {
+    const cards = Array.from(document.querySelectorAll('.card'));
+    for (const card of cards) {
+      const text = card.textContent || '';
+      if (text.includes('TOP 2 CONSENSUS')) {
+        return card.querySelector('.card-b');
+      }
+    }
+    return null;
+  }
+
+  function pct(value) {
+    return (((value || 0) * 100).toFixed(0)) + '%';
+  }
+
+  function buildRecentHtml(recent) {
+    if (!recent.length) {
+      return '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">按下開始回測後，這裡會顯示最近回測結果。</div>';
+    }
+    return recent.map((row, idx) =>
+      '<div class="summary-hit-row" style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 72px;gap:8px;align-items:center;padding:8px 0;' +
+        (idx ? 'border-top:1px solid var(--line);' : '') +
+        'font-size:10px;">' +
+          '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.dateLabel || '') + '</div>' +
+          '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.periodLabel || '') + '</div>' +
+          '<div style="font-size:10px;color:var(--fg-2);line-height:1.5;">' +
+            '<div>預測 ' + ((row.picks || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div>' +
+            '<div>實開 ' + ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div>' +
+            '<div>命中 ' + ((((row.matched || []).length ? row.matched : []).map((n) => String(n).padStart(2, '0')).join(' ')) || '未中') + '</div>' +
+          '</div>' +
+          '<div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';text-align:right;">' + (row.hits || 0) + '/2</div>' +
+      '</div>'
+    ).join('');
+  }
+
+  function buildPerNumberHtml(perNumber) {
+    const entries = Object.entries(perNumber || {}).sort((a, b) => {
+      const rateDiff = (b[1].rate || 0) - (a[1].rate || 0);
+      return rateDiff || Number(a[0]) - Number(b[0]);
+    });
+    if (!entries.length) {
+      return '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">目前回測期間內，尚無可統計的 2 碼歷史資料。</div>';
+    }
+    return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">' +
+      entries.map(([num, info]) =>
+        '<div style="padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+            '<div style="font:700 14px var(--mono);color:var(--gold);">' + String(num).padStart(2, '0') + '</div>' +
+            '<div style="font:700 12px var(--mono);color:var(--fg);">' + pct(info.rate || 0) + '</div>' +
+          '</div>' +
+          '<div style="margin-top:6px;font-size:10px;color:var(--fg-3);">命中 ' + (info.hits || 0) + ' / ' + (info.appearances || 0) + '</div>' +
+        '</div>'
+      ).join('') +
+    '</div>';
+  }
+
+  function renderSummaryHotfix() {
+    const bridge = window.__lottoSummaryBridge;
+    const body = findSummaryBody();
+    if (!body) return;
+
+    let mount = body.querySelector('[data-summary-hotfix]');
+    if (!mount) {
+      mount = document.createElement('div');
+      mount.setAttribute('data-summary-hotfix', '1');
+      mount.style.marginTop = '12px';
+      body.appendChild(mount);
+    }
+
+    body.querySelectorAll('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => {
+      node.style.display = 'none';
+    });
+
+    const stats = bridge && bridge.summaryHitStats ? bridge.summaryHitStats : {};
+    const dateValue = bridge && bridge.summaryStartDate ? bridge.summaryStartDate : START_FALLBACK;
+    const phase = stats.phase || 'idle';
+    const recent = Array.isArray(stats.recent) ? stats.recent.slice(0, 10) : [];
+    const signature = JSON.stringify({
+      dateValue,
+      phase,
+      total: stats.total || 0,
+      progress: stats.progress || 0,
+      samples: stats.samples || 0,
+      bothRate: stats.bothRate || 0,
+      hitRate: stats.hitRate || 0,
+      avgHits: stats.avgHits || 0,
+      recent,
+      perNumber: stats.perNumber || {}
+    });
+    if (mount.dataset.signature === signature) return;
+
+    let statusText = '按下開始回測後，這裡會顯示統計結果。';
+    if (!bridge) statusText = '尚未建立摘要回測橋接，請稍後再試。';
+    else if (phase === 'running') statusText = '回測中 ' + (stats.progress || 0) + '/' + (stats.total || 0);
+    else if (phase === 'ready') statusText = '已完成 ' + (stats.total || 0) + ' 期回測';
+
+    mount.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
+        '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">回測起始日</div>' +
+        '<input data-summary-start type="date" value="' + dateValue + '" style="background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:12px var(--mono);" />' +
+        '<button data-summary-run type="button" ' + (!bridge ? 'disabled ' : '') + 'style="border:1px solid var(--line);background:var(--gold);color:#151515;border-radius:8px;padding:8px 12px;font:700 12px var(--mono);cursor:' + (!bridge ? 'not-allowed' : 'pointer') + ';opacity:' + (!bridge ? '0.6' : '1') + ';">' + (phase === 'running' ? '回測中' : '開始回測') + '</button>' +
+      '</div>' +
+      '<div style="margin-top:8px;font-size:10px;color:var(--fg-3);">' + statusText + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(96px, 1fr));gap:8px;margin-top:12px;">' +
+        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">2碼全中率</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--cyan);">' + pct(stats.bothRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 兩碼全中</div></div>' +
+        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">至少中1碼</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--gold);">' + pct(stats.hitRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 命中至少 1 碼</div></div>' +
+        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">平均命中</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + ((stats.avgHits || 0).toFixed(2)) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">平均 / 2 碼</div></div>' +
+        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">樣本</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + (stats.samples || 0) + ' 期</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">自 ' + (stats.cutoffLabel || dateValue) + ' 起</div></div>' +
+      '</div>' +
+      '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
+          '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近 10 期回測明細</div>' +
+          '<div style="font-size:10px;color:var(--fg-3);">直接顯示每期預測 2 碼、實際命中號碼與 0/2、1/2、2/2</div>' +
+        '</div>' +
+        buildRecentHtml(recent) +
+      '</div>' +
+      '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
+          '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">2碼歷史命中率</div>' +
+          '<div style="font-size:10px;color:var(--fg-3);">統計回測期間內，每個被預測號碼各自的命中率</div>' +
+        '</div>' +
+        buildPerNumberHtml(stats.perNumber || {}) +
+      '</div>';
+
+    mount.dataset.signature = signature;
+
+    const input = mount.querySelector('[data-summary-start]');
+    if (input && !input.dataset.bound) {
+      input.dataset.bound = '1';
+      input.addEventListener('change', (e) => {
+        const nextBridge = window.__lottoSummaryBridge;
+        if (nextBridge && typeof nextBridge.setSummaryStartDate === 'function') {
+          nextBridge.setSummaryStartDate(e.target.value);
+        }
+      });
+    }
+
+    const button = mount.querySelector('[data-summary-run]');
+    if (button && !button.dataset.bound) {
+      button.dataset.bound = '1';
+      button.addEventListener('click', () => {
+        const nextBridge = window.__lottoSummaryBridge;
+        if (nextBridge && typeof nextBridge.runSummaryBacktest === 'function') {
+          nextBridge.runSummaryBacktest();
+        }
+      });
+    }
+  }
+
+  window.__lottoRenderSummaryHotfix = renderSummaryHotfix;
+  document.addEventListener('DOMContentLoaded', renderSummaryHotfix);
+  window.addEventListener('load', renderSummaryHotfix);
+  setTimeout(renderSummaryHotfix, 1200);
+  setTimeout(renderSummaryHotfix, 2500);
+  setInterval(renderSummaryHotfix, 1500);
+})();
 </script>
 
   <script type="__bundler/manifest">
