@@ -278,37 +278,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, predCtx, strategyConsensus]);`,
       `const summaryStrategies = ['balanced','gap','markov','markov2','ganzhi','ewma','rsi','poisson','consecutive','tailcycle'];
 
-  const buildSummaryWeightMap = (sourceHistory, weightSeed = seed) => {
-    const backtestWindow = Math.min(60, Math.max(0, sourceHistory.length - 20));
-    const weights = {};
-    summaryStrategies.forEach(id => {
-      let totalHits = 0;
-      let hit3plus = 0;
-      let perfect = 0;
-      let samples = 0;
-      for (let i = 0; i < backtestWindow; i++){
-        const actual = sourceHistory[i];
-        const priorHistory = sourceHistory.slice(i + 1, i + 1 + analysisWindow);
-        if (priorHistory.length < 20) continue;
-        const priorStats = computeFrequency(priorHistory, game.range);
-        const priorTransitions = buildTransitions(priorHistory, game.range);
-        const priorAdvanced = buildAdvancedSignals(priorHistory, game, priorTransitions);
-        const priorStructure = buildStructureSignals(priorHistory, game);
-        const pred = predictNumbers(id, priorStats, [], weightSeed + i * 97 + id.length, game, priorTransitions, priorHistory, actual.date, priorAdvanced, priorStructure);
-        const hits = pred.filter(n => actual.draw.includes(n)).length;
-        totalHits += hits;
-        if (hits >= 3) hit3plus++;
-        if (hits === game.pick) perfect++;
-        samples++;
-      }
-      const avgHits = samples ? totalHits / samples : 0;
-      const hit3Rate = samples ? hit3plus / samples : 0;
-      const perfectRate = samples ? perfect / samples : 0;
-      weights[id] = 1 + avgHits * 1.8 + hit3Rate * 1.2 + perfectRate * 2.2;
-    });
-    return weights;
-  };
-
   const buildSummaryPredCtx = (sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate) => {
     if (!sourceHistory[0]) return { ...(sourceAdvanced || {}), ...(sourceStructure || {}), transitions: sourceTransitions, range: game.range, pairSuggestions: [] };
     const LAST = sourceHistory[0].draw;
@@ -365,8 +334,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   };
 
   const strategyConsensus = useMemo(() => {
-    return buildSummaryWeightMap(history);
-  }, [history, analysisWindow, game, seed]);
+    return Object.fromEntries(summaryStrategies.map(id => [id, 1]));
+  }, [game.id]);
 
   const summaryTop2 = useMemo(() => {
     return buildSummaryTop2({
@@ -382,67 +351,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, strategyConsensus]);
 
-  const summaryHitCache = useMemo(() => {
-    const formatDateLabel = (value) => {
-      if (!value) return '--';
-      const d = value instanceof Date ? value : new Date(value);
-      if (Number.isNaN(d.getTime())) return '--';
-      return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('.');
-    };
-    const rows = [];
-    for (let i = 0; i < history.length; i++){
-      const actual = history[i];
-      if (!actual.date) continue;
-      const priorHistory = history.slice(i + 1, i + 1 + analysisWindow);
-      if (priorHistory.length < 20) continue;
-      const priorStats = computeFrequency(priorHistory, game.range);
-      const priorTransitions = buildTransitions(priorHistory, game.range);
-      const priorAdvanced = buildAdvancedSignals(priorHistory, game, priorTransitions);
-      const priorStructure = buildStructureSignals(priorHistory, game);
-      const priorWeights = buildSummaryWeightMap(priorHistory, seed + i * 131);
-      const priorTop2 = buildSummaryTop2({
-        stats: priorStats,
-        lockedNums: [],
-        currentSeed: seed + i * 131,
-        sourceHistory: priorHistory,
-        sourceTransitions: priorTransitions,
-        sourceAdvanced: priorAdvanced,
-        sourceStructure: priorStructure,
-        targetDate: actual.date,
-        weights: priorWeights
-      });
-      rows.push({
-        cutoffTime: actual.date.getTime(),
-        dateLabel: formatDateLabel(actual.date),
-        periodLabel: actual.periodLabel || ('#' + actual.period),
-        picks: priorTop2.map(row => row.n),
-        draw: actual.draw.slice(),
-        hits: priorTop2.filter(row => actual.draw.includes(row.n)).length
-      });
-    }
-    return rows;
-  }, [history, analysisWindow, game, seed]);
-
   const summaryHitStats = useMemo(() => {
-    const fallbackStart = '2026-05-13';
-    const startText = /^\\d{4}-\\d{2}-\\d{2}$/.test(summaryStartDate || '') ? summaryStartDate : fallbackStart;
-    const [startYear, startMonth, startDay] = startText.split('-').map(Number);
-    const cutoff = new Date(startYear, startMonth - 1, startDay);
-    const cutoffTime = cutoff.getTime();
-    const eligible = summaryHitCache.filter(row => row.cutoffTime >= cutoffTime);
-    const samples = eligible.length;
-    const hitAny = eligible.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
-    const hitBoth = eligible.reduce((sum, row) => sum + (row.hits === 2 ? 1 : 0), 0);
-    const totalHits = eligible.reduce((sum, row) => sum + row.hits, 0);
     return {
-      cutoffLabel: [cutoff.getFullYear(), String(cutoff.getMonth() + 1).padStart(2, '0'), String(cutoff.getDate()).padStart(2, '0')].join('.'),
-      samples,
-      hitRate: samples ? hitAny / samples : 0,
-      bothRate: samples ? hitBoth / samples : 0,
-      avgHits: samples ? totalHits / samples : 0,
-      recent: eligible.slice(0, 6).map(({ dateLabel, periodLabel, picks, draw, hits }) => ({ dateLabel, periodLabel, picks, draw, hits }))
+      cutoffLabel: '輕量模式',
+      samples: 0,
+      hitRate: 0,
+      bothRate: 0,
+      avgHits: 0,
+      recent: []
     };
-  }, [summaryHitCache, summaryStartDate]);`
+  }, []);`
     );
     template = template.replace(
       "  }, [history, analysisWindow, game, seed, summaryStartDate]);",
@@ -545,80 +463,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
     <\/script>`;
     const summaryEnhancerScript = `<script>
-      window.__lottoEnhanceSummary = function() {
-        const bridge = window.__lottoSummaryBridge;
-        if (!bridge || !bridge.summaryHitStats) return;
-        const labels = Array.from(document.querySelectorAll('div'));
-        const title = labels.find((node) => node.textContent && node.textContent.trim() === 'TOP 2 CONSENSUS');
-        if (!title) return;
-        const card = title.closest('.card');
-        const body = card ? card.querySelector('.card-b') : null;
-        if (!body) return;
-        let mount = body.querySelector('[data-summary-enhanced]');
-        if (!mount) {
-          mount = document.createElement('div');
-          mount.setAttribute('data-summary-enhanced', '1');
-          mount.style.marginTop = '12px';
-          body.appendChild(mount);
-        }
-        const stats = bridge.summaryHitStats;
-        const dateValue = bridge.summaryStartDate || '2026-05-13';
-        const active = document.activeElement;
-        const editingSummaryDate = active && active.matches && active.matches('[data-summary-start]');
-        const signature = JSON.stringify({
-          dateValue,
-          bothRate: Number(stats.bothRate || 0).toFixed(4),
-          avgHits: Number(stats.avgHits || 0).toFixed(4),
-          recent: (stats.recent || []).map((row) => ({
-            dateLabel: row.dateLabel,
-            periodLabel: row.periodLabel,
-            hits: row.hits,
-            picks: row.picks,
-            draw: row.draw
-          }))
-        });
-        if (mount.dataset.signature === signature && !editingSummaryDate) return;
-        const recentHtml = (stats.recent || []).length ? stats.recent.map((row) => {
-          const picks = row.picks.map((n) => '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:999px;background:var(--bg-2);border:1px solid var(--line);font:600 12px var(--mono);color:var(--gold);">' + String(n).padStart(2, '0') + '</span>').join('');
-          const draw = row.draw.map((n) => {
-            const hit = row.picks.includes(n);
-            return '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:999px;background:' + (hit ? 'color-mix(in oklch, var(--gold) 24%, transparent)' : 'var(--bg-3)') + ';border:1px solid ' + (hit ? 'var(--gold)' : 'var(--line)') + ';font:600 12px var(--mono);color:' + (hit ? 'var(--gold)' : 'var(--fg-2)') + ';">' + String(n).padStart(2, '0') + '</span>';
-          }).join('');
-          const hitColor = row.hits === 2 ? 'var(--green)' : (row.hits === 1 ? 'var(--gold)' : 'var(--fg-3)');
-          return '<div class="summary-hit-row" style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) minmax(0,1fr) 44px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:10px;">' +
-            '<div style="font-family:var(--mono);color:var(--fg-3);">' + row.dateLabel + '</div>' +
-            '<div style="font-family:var(--mono);color:var(--fg-3);">' + row.periodLabel + '</div>' +
-            '<div class="summary-hit-picks" style="display:flex;gap:4px;flex-wrap:wrap;">' + picks + '</div>' +
-            '<div class="summary-hit-draw" style="display:flex;gap:4px;flex-wrap:wrap;">' + draw + '</div>' +
-            '<div style="font:700 12px var(--mono);color:' + hitColor + ';">' + row.hits + '/2</div>' +
-          '</div>';
-        }).join('') : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">目前這個起始日之後還沒有足夠樣本。</div>';
-        mount.innerHTML =
-          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
-            '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">回測起始日</div>' +
-            '<input data-summary-start type="date" value="' + dateValue + '" style="background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:12px var(--mono);" />' +
-            '<div style="font-size:10px;color:var(--fg-3);">只統計這個日期之後的綜合摘要 Top 2 命中表現</div>' +
-          '</div>' +
-          '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(96px, 1fr));gap:8px;margin-top:12px;">' +
-            '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">2碼全中率</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--cyan);">' + (stats.bothRate * 100).toFixed(0) + '%</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 兩碼全中</div></div>' +
-            '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">平均命中</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + stats.avgHits.toFixed(2) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">平均 / 2 碼</div></div>' +
-          '</div>' +
-          '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
-              '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近命中明細</div>' +
-              '<div style="font-size:10px;color:var(--fg-3);">顯示最近 6 期摘要回測結果</div>' +
-            '</div>' + recentHtml + '</div>';
-        mount.dataset.signature = signature;
-        const input = mount.querySelector('[data-summary-start]');
-        if (input && document.activeElement !== input && input.value !== dateValue) input.value = dateValue;
-        if (input && !input.dataset.bound) {
-          input.dataset.bound = '1';
-          input.addEventListener('change', (e) => {
-            const nextBridge = window.__lottoSummaryBridge;
-            if (nextBridge && typeof nextBridge.setSummaryStartDate === 'function') nextBridge.setSummaryStartDate(e.target.value);
-          });
-        }
-      };
+      window.__lottoEnhanceSummary = function() {};
     <\/script>`;
     const responsiveStyle = `<style>
       @media (max-width: 900px) {
