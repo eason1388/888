@@ -173,6 +173,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       "function App(){\n  const [gameId, setGameId] = useState('d539');\n  const [ganzhiMode, setGanzhiMode] = useState(() => {\n    try { return localStorage.getItem('lotto_ganzhi_mode') || 'standard'; }\n    catch { return 'standard'; }\n  });\n  const game = GAMES[gameId];"
     );
     template = template.replace(
+      "  const [lookupQuery, setLookupQuery] = useState('');",
+      "  const [lookupQuery, setLookupQuery] = useState('');\n  const [summaryStartDate, setSummaryStartDate] = useState('2026-05-13');"
+    );
+    template = template.replace(
       "  const prevDrawCountRef = useRef(currentUserDraws.length);",
       "  const prevDrawCountRef = useRef(currentUserDraws.length);\n  useEffect(() => {\n    try { localStorage.setItem('lotto_ganzhi_mode', ganzhiMode); }\n    catch {}\n  }, [ganzhiMode]);"
     );
@@ -379,11 +383,21 @@ document.addEventListener('DOMContentLoaded', async function() {
   }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, strategyConsensus]);
 
   const summaryHitStats = useMemo(() => {
-    const cutoff = new Date(2026, 4, 13);
+    const fallbackStart = '2026-05-13';
+    const startText = /^\\d{4}-\\d{2}-\\d{2}$/.test(summaryStartDate || '') ? summaryStartDate : fallbackStart;
+    const [startYear, startMonth, startDay] = startText.split('-').map(Number);
+    const cutoff = new Date(startYear, startMonth - 1, startDay);
+    const formatDateLabel = (value) => {
+      if (!value) return '--';
+      const d = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(d.getTime())) return '--';
+      return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('.');
+    };
     let samples = 0;
     let hitAny = 0;
     let hitBoth = 0;
     let totalHits = 0;
+    const recent = [];
     for (let i = 0; i < history.length; i++){
       const actual = history[i];
       if (!actual.date || actual.date < cutoff) continue;
@@ -410,19 +424,73 @@ document.addEventListener('DOMContentLoaded', async function() {
       totalHits += hits;
       if (hits >= 1) hitAny++;
       if (hits === 2) hitBoth++;
+      if (recent.length < 6) {
+        recent.push({
+          dateLabel: formatDateLabel(actual.date),
+          periodLabel: actual.periodLabel || ('#' + actual.period),
+          picks: priorTop2.map(row => row.n),
+          draw: actual.draw.slice(),
+          hits
+        });
+      }
     }
     return {
-      cutoffLabel: '05.13',
+      cutoffLabel: formatDateLabel(cutoff),
       samples,
       hitRate: samples ? hitAny / samples : 0,
       bothRate: samples ? hitBoth / samples : 0,
-      avgHits: samples ? totalHits / samples : 0
+      avgHits: samples ? totalHits / samples : 0,
+      recent
     };
-  }, [history, analysisWindow, game, seed]);`
+  }, [history, analysisWindow, game, seed, summaryStartDate]);`
+    );
+    template = template.replace(
+      "  }, [history, analysisWindow, game, seed, summaryStartDate]);",
+      "  }, [history, analysisWindow, game, seed, summaryStartDate]);\n  useEffect(() => {\n    window.__lottoSummaryBridge = {\n      summaryHitStats,\n      summaryTop2,\n      summaryStartDate,\n      setSummaryStartDate\n    };\n  }, [summaryHitStats, summaryTop2, summaryStartDate]);"
     );
     template = template.replace(
       `<div style={{fontSize:11,color:'var(--fg-3)',lineHeight:1.6}}>
                 綜合 S-03、S-04、S-06、S-07、S-08、S-11、S-12、S-13、S-14、S-15 的結果後，目前最有共識的 2 個號碼。
+              </div>
+              <div style={{marginTop:12,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)',letterSpacing:'0.08em'}}>回測起始日</div>
+                <input type="date" value={summaryStartDate} onChange={e => setSummaryStartDate(e.target.value)} style={{background:'var(--bg-3)',color:'var(--fg)',border:'1px solid var(--line)',borderRadius:8,padding:'8px 10px',fontFamily:'var(--mono)',fontSize:12}} />
+                <div style={{fontSize:10,color:'var(--fg-3)'}}>只統計這個日期之後的綜合摘要 Top 2 命中表現</div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(96px, 1fr))',gap:8,marginTop:12}}>
+                <div style={{padding:'10px 8px',border:'1px solid var(--line)',borderRadius:8,background:'var(--bg-3)'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>2碼全中率</div>
+                  <div style={{marginTop:4,fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--cyan)'}}>{(summaryHitStats.bothRate * 100).toFixed(0)}%</div>
+                  <div style={{marginTop:4,fontSize:10,color:'var(--fg-3)'}}>Top 2 兩碼全中</div>
+                </div>
+                <div style={{padding:'10px 8px',border:'1px solid var(--line)',borderRadius:8,background:'var(--bg-3)'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>平均命中</div>
+                  <div style={{marginTop:4,fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--fg)'}}>{summaryHitStats.avgHits.toFixed(2)}</div>
+                  <div style={{marginTop:4,fontSize:10,color:'var(--fg-3)'}}>平均 / 2 碼</div>
+                </div>
+              </div>
+              <div style={{marginTop:12,padding:'10px',border:'1px solid var(--line)',borderRadius:10,background:'var(--bg-3)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)',letterSpacing:'0.08em'}}>最近命中明細</div>
+                  <div style={{fontSize:10,color:'var(--fg-3)'}}>顯示最近 6 期摘要回測結果</div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                  {summaryHitStats.recent.length ? summaryHitStats.recent.map((row, idx) => (
+                    <div key={idx} style={{display:'grid',gridTemplateColumns:'72px 64px 1fr 1fr 48px',gap:8,alignItems:'center',padding:'8px 0',borderTop: idx ? '1px solid var(--line)' : 'none'}}>
+                      <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>{row.dateLabel}</div>
+                      <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>{row.periodLabel}</div>
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                        {row.picks.map(n => <span key={n} className="markov-pill hot" style={{minWidth:28}}>{formatNum(n)}</span>)}
+                      </div>
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                        {row.draw.map(n => <span key={n} className={row.picks.includes(n) ? "markov-pill hot" : "markov-pill from"} style={{minWidth:28}}>{formatNum(n)}</span>)}
+                      </div>
+                      <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color: row.hits === 2 ? 'var(--green)' : row.hits === 1 ? 'var(--gold)' : 'var(--fg-3)'}}>{row.hits}/2</div>
+                    </div>
+                  )) : (
+                    <div style={{fontSize:11,color:'var(--fg-3)',padding:'4px 0'}}>目前這個起始日之後還沒有足夠樣本。</div>
+                  )}
+                </div>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>`,
       `<div style={{fontSize:11,color:'var(--fg-3)',lineHeight:1.6}}>
@@ -475,6 +543,69 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         return '第 ' + (latest.period + 1) + ' 期';
       };
+    <\/script>`;
+    const summaryEnhancerScript = `<script>
+      window.__lottoEnhanceSummary = function() {
+        const bridge = window.__lottoSummaryBridge;
+        if (!bridge || !bridge.summaryHitStats) return;
+        const labels = Array.from(document.querySelectorAll('div'));
+        const title = labels.find((node) => node.textContent && node.textContent.trim() === 'TOP 2 CONSENSUS');
+        if (!title) return;
+        const card = title.closest('.card');
+        const body = card ? card.querySelector('.card-b') : null;
+        if (!body) return;
+        let mount = body.querySelector('[data-summary-enhanced]');
+        if (!mount) {
+          mount = document.createElement('div');
+          mount.setAttribute('data-summary-enhanced', '1');
+          mount.style.marginTop = '12px';
+          body.appendChild(mount);
+        }
+        const stats = bridge.summaryHitStats;
+        const dateValue = bridge.summaryStartDate || '2026-05-13';
+        const recentHtml = (stats.recent || []).length ? stats.recent.map((row) => {
+          const picks = row.picks.map((n) => '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:999px;background:var(--bg-2);border:1px solid var(--line);font:600 12px var(--mono);color:var(--gold);">' + String(n).padStart(2, '0') + '</span>').join('');
+          const draw = row.draw.map((n) => {
+            const hit = row.picks.includes(n);
+            return '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:999px;background:' + (hit ? 'color-mix(in oklch, var(--gold) 24%, transparent)' : 'var(--bg-3)') + ';border:1px solid ' + (hit ? 'var(--gold)' : 'var(--line)') + ';font:600 12px var(--mono);color:' + (hit ? 'var(--gold)' : 'var(--fg-2)') + ';">' + String(n).padStart(2, '0') + '</span>';
+          }).join('');
+          const hitColor = row.hits === 2 ? 'var(--green)' : (row.hits === 1 ? 'var(--gold)' : 'var(--fg-3)');
+          return '<div style="display:grid;grid-template-columns:72px 64px 1fr 1fr 44px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:10px;">' +
+            '<div style="font-family:var(--mono);color:var(--fg-3);">' + row.dateLabel + '</div>' +
+            '<div style="font-family:var(--mono);color:var(--fg-3);">' + row.periodLabel + '</div>' +
+            '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + picks + '</div>' +
+            '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + draw + '</div>' +
+            '<div style="font:700 12px var(--mono);color:' + hitColor + ';">' + row.hits + '/2</div>' +
+          '</div>';
+        }).join('') : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">目前這個起始日之後還沒有足夠樣本。</div>';
+        mount.innerHTML =
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
+            '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">回測起始日</div>' +
+            '<input data-summary-start type="date" value="' + dateValue + '" style="background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:12px var(--mono);" />' +
+            '<div style="font-size:10px;color:var(--fg-3);">只統計這個日期之後的綜合摘要 Top 2 命中表現</div>' +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(96px, 1fr));gap:8px;margin-top:12px;">' +
+            '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">2碼全中率</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--cyan);">' + (stats.bothRate * 100).toFixed(0) + '%</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 兩碼全中</div></div>' +
+            '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">平均命中</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + stats.avgHits.toFixed(2) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">平均 / 2 碼</div></div>' +
+          '</div>' +
+          '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
+              '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近命中明細</div>' +
+              '<div style="font-size:10px;color:var(--fg-3);">顯示最近 6 期摘要回測結果</div>' +
+            '</div>' + recentHtml + '</div>';
+        const input = mount.querySelector('[data-summary-start]');
+        if (input && input.value !== dateValue) input.value = dateValue;
+        if (input && !input.dataset.bound) {
+          input.dataset.bound = '1';
+          input.addEventListener('change', (e) => {
+            const nextBridge = window.__lottoSummaryBridge;
+            if (nextBridge && typeof nextBridge.setSummaryStartDate === 'function') nextBridge.setSummaryStartDate(e.target.value);
+          });
+        }
+      };
+      setInterval(window.__lottoEnhanceSummary, 800);
+      setTimeout(window.__lottoEnhanceSummary, 1200);
+      window.addEventListener('load', window.__lottoEnhanceSummary);
     <\/script>`;
     const responsiveStyle = `<style>
       @media (max-width: 900px) {
@@ -537,7 +668,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const headOpen = template.match(/<head[^>]*>/i);
     if (headOpen) {
       const i = headOpen.index + headOpen[0].length;
-      template = template.slice(0, i) + resourceScript + helperScript + responsiveStyle + template.slice(i);
+      template = template.slice(0, i) + resourceScript + helperScript + summaryEnhancerScript + responsiveStyle + template.slice(i);
     }
 
     // Parse the template and swap the root element. Scripts inserted via
@@ -569,6 +700,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (window.Babel && typeof window.Babel.transformScriptTags === 'function') {
       window.Babel.transformScriptTags();
     }
+    setTimeout(() => {
+      if (typeof window.__lottoEnhanceSummary === 'function') {
+        window.__lottoEnhanceSummary();
+      }
+    }, 1500);
   } catch (err) {
     setStatus('Error unpacking: ' + err.message);
     console.error('Bundle unpack error:', err);
