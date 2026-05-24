@@ -459,6 +459,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       bothRate: samples ? hitBoth / samples : 0,
       avgHits: samples ? totalHits / samples : 0,
       recent: eligible.slice(0, 6).map(({ dateLabel, periodLabel, picks, draw, hits }) => ({ dateLabel, periodLabel, picks, draw, hits })),
+      perfectRecent: eligible.filter(row => row.hits === 2).slice(0, 6).map(({ dateLabel, periodLabel, picks, draw, hits }) => ({ dateLabel, periodLabel, picks, draw, hits })),
       phase: summaryHistoryStatus.phase,
       progress: summaryHistoryStatus.progress,
       total: summaryHistoryStatus.total
@@ -492,8 +493,8 @@ document.addEventListener('DOMContentLoaded', async function() {
               </div>
               <div style={{marginTop:12,padding:'10px',border:'1px solid var(--line)',borderRadius:10,background:'var(--bg-3)'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
-                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)',letterSpacing:'0.08em'}}>最近命中明細</div>
-                  <div style={{fontSize:10,color:'var(--fg-3)'}}>顯示最近 6 期摘要回測結果</div>
+                    <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)',letterSpacing:'0.08em'}}>最近回測明細</div>
+                    <div style={{fontSize:10,color:'var(--fg-3)'}}>顯示最近 6 期回測結果，不一定包含 2 碼全中</div>
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:6}}>
                   {summaryHitStats.recent.length ? summaryHitStats.recent.map((row, idx) => (
@@ -594,7 +595,32 @@ document.addEventListener('DOMContentLoaded', async function() {
                       <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color: row.hits === 2 ? 'var(--green)' : row.hits === 1 ? 'var(--gold)' : 'var(--fg-3)'}}>{row.hits}/2</div>
                     </div>
                   )) : (
-                    <div style={{fontSize:11,color:'var(--fg-3)',padding:'4px 0'}}>按下開始回測後，這裡會顯示最近命中明細。</div>
+                    <div style={{fontSize:11,color:'var(--fg-3)',padding:'4px 0'}}>按下開始回測後，這裡會顯示最近回測結果。</div>
+                  )}
+                </div>
+              </div>
+              <div style={{marginTop:12,padding:'10px',border:'1px solid var(--line)',borderRadius:10,background:'var(--bg-3)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)',letterSpacing:'0.08em'}}>2碼全中紀錄</div>
+                  <div style={{fontSize:10,color:'var(--fg-3)'}}>用實際歷史命中來驗證 2 碼全中率</div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                  {summaryHitStats.perfectRecent.length ? summaryHitStats.perfectRecent.map((row, idx) => (
+                    <div key={`perfect-${idx}`} style={{display:'grid',gridTemplateColumns:'72px 64px 1fr 1fr 48px',gap:8,alignItems:'center',padding:'8px 0',borderTop: idx ? '1px solid var(--line)' : 'none'}}>
+                      <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>{row.dateLabel}</div>
+                      <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>{row.periodLabel}</div>
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                        {row.picks.map(n => <span key={n} className="markov-pill hot" style={{minWidth:28}}>{formatNum(n)}</span>)}
+                      </div>
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                        {row.draw.map(n => <span key={n} className={row.picks.includes(n) ? "markov-pill hot" : "markov-pill from"} style={{minWidth:28}}>{formatNum(n)}</span>)}
+                      </div>
+                      <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:'var(--green)'}}>{row.hits}/2</div>
+                    </div>
+                  )) : (
+                    <div style={{fontSize:11,color:'var(--fg-3)',padding:'4px 0'}}>
+                      自 {summaryHitStats.cutoffLabel} 起尚無 2 碼全中紀錄，因此目前 2 碼全中率為 {(summaryHitStats.bothRate * 100).toFixed(0)}%。
+                    </div>
                   )}
                 </div>
               </div>
@@ -623,6 +649,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           const body = findSummaryBody();
           if (!body) return false;
           if (typeof window.__lottoSummaryManualRender === 'function') return false;
+          const hasBuiltInPanel = Array.from(body.querySelectorAll('input[type="date"]')).some((input) => !input.closest('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]'));
+          if (hasBuiltInPanel) {
+            body.querySelectorAll('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => node.remove());
+            return true;
+          }
           let mount = body.querySelector('[data-summary-inline]');
           if (!mount) {
             mount = document.createElement('div');
@@ -1022,6 +1053,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           const body = findSummaryBody();
           if (!body) return;
           if (typeof window.__lottoSummaryManualRender === 'function') return;
+          const hasBuiltInPanel = Array.from(body.querySelectorAll('input[type="date"]')).some((input) => !input.closest('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]'));
+          if (hasBuiltInPanel) {
+            body.querySelectorAll('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => node.remove());
+            return;
+          }
           let mount = body.querySelector('[data-summary-enhanced]');
           if (!mount) {
             mount = document.createElement('div');
@@ -1138,6 +1174,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           const body = findSummaryBody();
           if (!body) return false;
           if (!bridge || !bridge.summaryHitStats) return false;
+          const hasBuiltInPanel = Array.from(body.querySelectorAll('input[type="date"]')).some((input) => !input.closest('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]'));
+          if (hasBuiltInPanel) {
+            body.querySelectorAll('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => node.remove());
+            return true;
+          }
 
           body.querySelectorAll('[data-summary-inline], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => {
             node.remove();
@@ -1393,6 +1434,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       const body = findSummaryBody();
       if (!body) return;
       if (typeof window.__lottoSummaryManualRender === 'function') return;
+      const hasBuiltInPanel = Array.from(body.querySelectorAll('input[type="date"]')).some((input) => !input.closest('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]'));
+      if (hasBuiltInPanel) {
+        body.querySelectorAll('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => node.remove());
+        return;
+      }
 
       let mount = body.querySelector('[data-summary-enhanced-fallback]');
       if (!mount) {
