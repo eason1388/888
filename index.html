@@ -606,7 +606,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:6}}>
                   {summaryHitStats.perfectRecent.length ? summaryHitStats.perfectRecent.map((row, idx) => (
-                    <div key={`perfect-${idx}`} style={{display:'grid',gridTemplateColumns:'72px 64px 1fr 1fr 48px',gap:8,alignItems:'center',padding:'8px 0',borderTop: idx ? '1px solid var(--line)' : 'none'}}>
+                    <div key={idx} style={{display:'grid',gridTemplateColumns:'72px 64px 1fr 1fr 48px',gap:8,alignItems:'center',padding:'8px 0',borderTop: idx ? '1px solid var(--line)' : 'none'}}>
                       <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>{row.dateLabel}</div>
                       <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>{row.periodLabel}</div>
                       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
