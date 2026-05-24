@@ -491,7 +491,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       progress: summaryHistoryStatus.progress,
       total: summaryHistoryStatus.total
     };
-  }, [summaryHistoryCache, summaryStartDate, summaryHistoryStatus]);`
+  }, [summaryHistoryCache, summaryStartDate, summaryHistoryStatus, summaryTop2, history]);`
     );
     template = template.replace(
       "  }, [history, analysisWindow, game, seed, summaryStartDate]);",
