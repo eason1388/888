@@ -828,7 +828,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         function normalizeDate(value) {
           if (!value) return '';
           const text = String(value).trim();
-          const match = text.match(/(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+          const match = text.match(/(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})/);
           if (!match) return '';
           return match[1] + '-' + String(match[2]).padStart(2, '0') + '-' + String(match[3]).padStart(2, '0');
         }
@@ -840,6 +840,24 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         function normalizeRow(row, index) {
+          if (Array.isArray(row) && row.length >= 9) {
+            const year = Number(row[0]);
+            const month = Number(row[1]);
+            const day = Number(row[2]);
+            const draw = row.slice(3, 8).map((value) => Number(value)).filter((value) => Number.isFinite(value));
+            const period = row[8] || '';
+            const dateIso = year && month && day
+              ? String(year).padStart(4, '0') + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0')
+              : '';
+            if (!draw.length) return null;
+            return {
+              draw,
+              period,
+              periodLabel: period ? ('#' + period) : ('#' + index),
+              dateIso,
+              dateLabel: dateIso ? dateIso.replace(/-/g, '.') : ''
+            };
+          }
           if (!row || typeof row !== 'object') return null;
           const draw = readNumbers(row.nums || row.draw || row.result || row.values || row.number);
           if (!draw.length) return null;
@@ -902,7 +920,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           const card = findSummaryCard();
           if (!card) return [];
           const text = card.textContent || '';
-          const matched = [...text.matchAll(/(\d{2})共同入選/g)]
+          const matched = [...text.matchAll(/(\\d{2})共同入選/g)]
             .map((entry) => Number(entry[1]))
             .filter((value) => Number.isFinite(value));
           if (matched.length >= 2) {
@@ -911,7 +929,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           const values = [];
           for (const node of Array.from(card.querySelectorAll('div'))) {
             const text = (node.textContent || '').trim();
-            if (!/^\d{2}$/.test(text)) continue;
+            if (!/^\\d{2}$/.test(text)) continue;
             const value = Number(text);
             if (!Number.isFinite(value) || values.includes(value)) continue;
             values.push(value);
@@ -1278,6 +1296,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             body.querySelectorAll('[data-summary-inline], [data-summary-manual], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => node.remove());
             return true;
           }
+
+          Array.from(body.children).forEach((node, index) => {
+            if (node.matches('[data-summary-manual], [data-summary-inline], [data-summary-enhanced], [data-summary-enhanced-fallback]')) return;
+            if (index >= 2) {
+              node.style.display = 'none';
+            }
+          });
 
           body.querySelectorAll('[data-summary-inline], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => {
             node.remove();
