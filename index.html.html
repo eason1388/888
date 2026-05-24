@@ -382,25 +382,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, strategyConsensus]);
 
-  const summaryHitStats = useMemo(() => {
-    const fallbackStart = '2026-05-13';
-    const startText = /^\\d{4}-\\d{2}-\\d{2}$/.test(summaryStartDate || '') ? summaryStartDate : fallbackStart;
-    const [startYear, startMonth, startDay] = startText.split('-').map(Number);
-    const cutoff = new Date(startYear, startMonth - 1, startDay);
+  const summaryHitCache = useMemo(() => {
     const formatDateLabel = (value) => {
       if (!value) return '--';
       const d = value instanceof Date ? value : new Date(value);
       if (Number.isNaN(d.getTime())) return '--';
       return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('.');
     };
-    let samples = 0;
-    let hitAny = 0;
-    let hitBoth = 0;
-    let totalHits = 0;
-    const recent = [];
+    const rows = [];
     for (let i = 0; i < history.length; i++){
       const actual = history[i];
-      if (!actual.date || actual.date < cutoff) continue;
+      if (!actual.date) continue;
       const priorHistory = history.slice(i + 1, i + 1 + analysisWindow);
       if (priorHistory.length < 20) continue;
       const priorStats = computeFrequency(priorHistory, game.range);
@@ -419,30 +411,38 @@ document.addEventListener('DOMContentLoaded', async function() {
         targetDate: actual.date,
         weights: priorWeights
       });
-      const hits = priorTop2.filter(row => actual.draw.includes(row.n)).length;
-      samples++;
-      totalHits += hits;
-      if (hits >= 1) hitAny++;
-      if (hits === 2) hitBoth++;
-      if (recent.length < 6) {
-        recent.push({
-          dateLabel: formatDateLabel(actual.date),
-          periodLabel: actual.periodLabel || ('#' + actual.period),
-          picks: priorTop2.map(row => row.n),
-          draw: actual.draw.slice(),
-          hits
-        });
-      }
+      rows.push({
+        cutoffTime: actual.date.getTime(),
+        dateLabel: formatDateLabel(actual.date),
+        periodLabel: actual.periodLabel || ('#' + actual.period),
+        picks: priorTop2.map(row => row.n),
+        draw: actual.draw.slice(),
+        hits: priorTop2.filter(row => actual.draw.includes(row.n)).length
+      });
     }
+    return rows;
+  }, [history, analysisWindow, game, seed]);
+
+  const summaryHitStats = useMemo(() => {
+    const fallbackStart = '2026-05-13';
+    const startText = /^\\d{4}-\\d{2}-\\d{2}$/.test(summaryStartDate || '') ? summaryStartDate : fallbackStart;
+    const [startYear, startMonth, startDay] = startText.split('-').map(Number);
+    const cutoff = new Date(startYear, startMonth - 1, startDay);
+    const cutoffTime = cutoff.getTime();
+    const eligible = summaryHitCache.filter(row => row.cutoffTime >= cutoffTime);
+    const samples = eligible.length;
+    const hitAny = eligible.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
+    const hitBoth = eligible.reduce((sum, row) => sum + (row.hits === 2 ? 1 : 0), 0);
+    const totalHits = eligible.reduce((sum, row) => sum + row.hits, 0);
     return {
-      cutoffLabel: formatDateLabel(cutoff),
+      cutoffLabel: [cutoff.getFullYear(), String(cutoff.getMonth() + 1).padStart(2, '0'), String(cutoff.getDate()).padStart(2, '0')].join('.'),
       samples,
       hitRate: samples ? hitAny / samples : 0,
       bothRate: samples ? hitBoth / samples : 0,
       avgHits: samples ? totalHits / samples : 0,
-      recent
+      recent: eligible.slice(0, 6).map(({ dateLabel, periodLabel, picks, draw, hits }) => ({ dateLabel, periodLabel, picks, draw, hits }))
     };
-  }, [history, analysisWindow, game, seed, summaryStartDate]);`
+  }, [summaryHitCache, summaryStartDate]);`
     );
     template = template.replace(
       "  }, [history, analysisWindow, game, seed, summaryStartDate]);",
