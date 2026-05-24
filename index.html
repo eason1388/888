@@ -971,6 +971,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
           };
         }
+        window.__lottoBuildStandaloneSummaryStats = buildStandaloneStats;
+        window.__lottoReadTop2FromCard = readTop2FromCard;
 
         function ensureStandaloneBridge() {
           const existing = window.__lottoSummaryBridge;
@@ -1765,6 +1767,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     const dateValue = bridge && bridge.summaryStartDate ? bridge.summaryStartDate : START_FALLBACK;
     const phase = stats.phase || 'idle';
     const recent = Array.isArray(stats.recent) ? stats.recent.slice(0, 10) : [];
+    const standalone = typeof window.__lottoBuildStandaloneSummaryStats === 'function'
+      ? window.__lottoBuildStandaloneSummaryStats(dateValue)
+      : null;
+    const fallbackCurrentStats = standalone && standalone.summaryHitStats ? standalone.summaryHitStats : {};
+    const effectiveCurrentTop2Values = Array.isArray(stats.currentTop2Values) && stats.currentTop2Values.length
+      ? stats.currentTop2Values
+      : (fallbackCurrentStats.currentTop2Values || []);
+    const effectiveCurrentTop2PerNumber = Array.isArray(stats.currentTop2PerNumber) && stats.currentTop2PerNumber.length
+      ? stats.currentTop2PerNumber
+      : (fallbackCurrentStats.currentTop2PerNumber || []);
+    const effectiveCurrentTop2History = Array.isArray(stats.currentTop2History) && stats.currentTop2History.length
+      ? stats.currentTop2History
+      : (fallbackCurrentStats.currentTop2History || []);
     const signature = JSON.stringify({
       dateValue,
       phase,
@@ -1776,9 +1791,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       avgHits: stats.avgHits || 0,
       recent,
       perNumber: stats.perNumber || {},
-      currentTop2Values: stats.currentTop2Values || [],
-      currentTop2PerNumber: stats.currentTop2PerNumber || [],
-      currentTop2History: stats.currentTop2History || []
+      currentTop2Values: effectiveCurrentTop2Values,
+      currentTop2PerNumber: effectiveCurrentTop2PerNumber,
+      currentTop2History: effectiveCurrentTop2History
     });
     if (mount.dataset.signature === signature) return;
 
@@ -1805,7 +1820,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">目前 Top 2 歷史資料</div>' +
           '<div style="font-size:10px;color:var(--fg-3);">直接檢查畫面上這 2 個號碼，在歷史期數中各自命中幾次</div>' +
         '</div>' +
-        buildCurrentTop2Html(stats) +
+        buildCurrentTop2Html({
+          currentTop2Values: effectiveCurrentTop2Values,
+          currentTop2PerNumber: effectiveCurrentTop2PerNumber,
+          currentTop2History: effectiveCurrentTop2History
+        }) +
       '</div>' +
       '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
