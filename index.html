@@ -429,6 +429,24 @@ document.addEventListener('DOMContentLoaded', async function() {
     const cutoff = new Date(startYear, startMonth - 1, startDay);
     const cutoffTime = cutoff.getTime();
     const eligible = summaryHistoryCache.filter(row => row.cutoffTime >= cutoffTime);
+    const currentTop2Values = (summaryTop2 || [])
+      .map((row) => typeof row === 'number' ? row : row && typeof row.n === 'number' ? row.n : Number(row))
+      .filter((value) => Number.isFinite(value))
+      .slice(0, 2);
+    const currentTop2History = history
+      .filter((row) => row && row.date && row.date.getTime() >= cutoffTime)
+      .slice(0, 20)
+      .map((row) => {
+        const matched = currentTop2Values.filter((n) => (row.draw || []).includes(n));
+        return {
+          dateLabel: formatSummaryDateLabel(row.date),
+          periodLabel: row.periodLabel || ('#' + row.period),
+          picks: currentTop2Values.slice(),
+          draw: (row.draw || []).slice(),
+          hits: matched.length,
+          matched
+        };
+      });
     const samples = eligible.length;
     const hitAny = eligible.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
     const hitBoth = eligible.reduce((sum, row) => sum + (row.hits === 2 ? 1 : 0), 0);
@@ -441,12 +459,29 @@ document.addEventListener('DOMContentLoaded', async function() {
         if ((row.draw || []).includes(n)) perNumberHits[n].hits += 1;
       });
     });
+    const currentTop2PerNumber = currentTop2Values.map((n) => {
+      const hits = currentTop2History.reduce((sum, row) => sum + ((row.draw || []).includes(n) ? 1 : 0), 0);
+      const samples = currentTop2History.length;
+      return {
+        n,
+        hits,
+        samples,
+        hitRate: samples ? hits / samples : 0
+      };
+    });
+    const currentTop2HitAny = currentTop2History.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
+    const currentTop2HitBoth = currentTop2History.reduce((sum, row) => sum + (row.hits === 2 ? 1 : 0), 0);
     return {
       cutoffLabel: formatSummaryDateLabel(cutoff),
       samples,
       hitRate: samples ? hitAny / samples : 0,
       bothRate: samples ? hitBoth / samples : 0,
       avgHits: samples ? totalHits / samples : 0,
+      currentTop2Values,
+      currentTop2History,
+      currentTop2HitRate: currentTop2History.length ? currentTop2HitAny / currentTop2History.length : 0,
+      currentTop2BothRate: currentTop2History.length ? currentTop2HitBoth / currentTop2History.length : 0,
+      currentTop2PerNumber,
       recent: eligible.slice(0, 10).map(({ dateLabel, periodLabel, picks, draw, hits, matched }) => ({ dateLabel, periodLabel, picks, draw, hits, matched })),
       perfectRecent: eligible.filter(row => row.hits === 2).slice(0, 10).map(({ dateLabel, periodLabel, picks, draw, hits, matched }) => ({ dateLabel, periodLabel, picks, draw, hits, matched })),
       perNumber: Object.values(perNumberHits)
@@ -859,7 +894,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         function readTop2FromCard() {
           const bridge = window.__lottoSummaryBridge;
           if (bridge && Array.isArray(bridge.summaryTop2) && bridge.summaryTop2.length >= 2) {
-            return bridge.summaryTop2.slice(0, 2).map((value) => Number(value)).filter((value) => Number.isFinite(value));
+            return bridge.summaryTop2
+              .slice(0, 2)
+              .map((value) => typeof value === 'number' ? value : value && typeof value.n === 'number' ? value.n : Number(value))
+              .filter((value) => Number.isFinite(value));
           }
           const card = findSummaryCard();
           if (!card) return [];
@@ -889,18 +927,29 @@ document.addEventListener('DOMContentLoaded', async function() {
             .filter((row) => !row.dateIso || row.dateIso >= cutoff)
             .map((row) => {
               const hits = picks.reduce((sum, value) => sum + (row.draw.includes(value) ? 1 : 0), 0);
+              const matched = picks.filter((value) => row.draw.includes(value));
               return {
                 dateLabel: row.dateLabel,
                 periodLabel: row.periodLabel,
                 picks: picks.slice(),
                 draw: row.draw.slice(),
-                hits
+                hits,
+                matched
               };
             });
           const samples = eligible.length;
           const hitAny = eligible.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
           const hitBoth = eligible.reduce((sum, row) => sum + (row.hits >= 2 ? 1 : 0), 0);
           const totalHits = eligible.reduce((sum, row) => sum + row.hits, 0);
+          const perNumber = picks.map((n) => {
+            const hits = eligible.reduce((sum, row) => sum + (row.draw.includes(n) ? 1 : 0), 0);
+            return {
+              n,
+              hits,
+              samples,
+              hitRate: samples ? hits / samples : 0
+            };
+          });
           return {
             summaryTop2: picks,
             summaryHitStats: {
@@ -909,7 +958,13 @@ document.addEventListener('DOMContentLoaded', async function() {
               hitRate: samples ? hitAny / samples : 0,
               bothRate: samples ? hitBoth / samples : 0,
               avgHits: samples ? totalHits / samples : 0,
-              recent: eligible.slice(0, 6),
+              currentTop2Values: picks.slice(),
+              currentTop2History: eligible.slice(0, 10),
+              currentTop2HitRate: samples ? hitAny / samples : 0,
+              currentTop2BothRate: samples ? hitBoth / samples : 0,
+              currentTop2PerNumber: perNumber,
+              recent: eligible.slice(0, 10),
+              perNumber,
               phase: 'ready',
               progress: samples,
               total: samples
@@ -1648,6 +1703,39 @@ document.addEventListener('DOMContentLoaded', async function() {
     '</div>';
   }
 
+  function buildCurrentTop2Html(stats) {
+    const values = Array.isArray(stats.currentTop2Values) ? stats.currentTop2Values : [];
+    const perNumber = Array.isArray(stats.currentTop2PerNumber) ? stats.currentTop2PerNumber : [];
+    const historyRows = Array.isArray(stats.currentTop2History) ? stats.currentTop2History.slice(0, 10) : [];
+    if (!values.length) {
+      return '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">目前還沒有可統計的 Top 2 號碼。</div>';
+    }
+    const cardsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">' +
+      perNumber.map((row) =>
+        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+            '<span class="markov-pill hot" style="min-width:28px;">' + String(row.n).padStart(2, '0') + '</span>' +
+            '<div style="font:700 14px var(--mono);color:var(--gold);">' + pct(row.hitRate || 0) + '</div>' +
+          '</div>' +
+          '<div style="margin-top:6px;font:10px var(--mono);color:var(--fg-3);">命中 ' + (row.hits || 0) + ' / ' + (row.samples || 0) + '</div>' +
+        '</div>'
+      ).join('') +
+    '</div>';
+    const rowsHtml = historyRows.length
+      ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">' +
+          historyRows.map((row, idx) =>
+            '<div style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 72px;gap:8px;align-items:center;padding:8px 0;' + (idx ? 'border-top:1px solid var(--line);' : '') + 'font-size:10px;">' +
+              '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.dateLabel || '') + '</div>' +
+              '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.periodLabel || '') + '</div>' +
+              '<div style="font-size:10px;color:var(--fg-2);line-height:1.5;"><div>Top 2 ' + values.map((n) => String(n).padStart(2, '0')).join(' ') + '</div><div>實開 ' + ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div><div>命中 ' + ((((row.matched || []).length ? row.matched : []).map((n) => String(n).padStart(2, '0')).join(' ')) || '未中') + '</div></div>' +
+              '<div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';text-align:right;">' + (row.hits || 0) + '/2</div>' +
+            '</div>'
+          ).join('') +
+        '</div>'
+      : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;margin-top:10px;">目前日期範圍內沒有可顯示的 Top 2 歷史紀錄。</div>';
+    return cardsHtml + rowsHtml;
+  }
+
   function renderSummaryHotfix() {
     const bridge = window.__lottoSummaryBridge;
     const body = findSummaryBody();
@@ -1679,7 +1767,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       hitRate: stats.hitRate || 0,
       avgHits: stats.avgHits || 0,
       recent,
-      perNumber: stats.perNumber || {}
+      perNumber: stats.perNumber || {},
+      currentTop2Values: stats.currentTop2Values || [],
+      currentTop2PerNumber: stats.currentTop2PerNumber || [],
+      currentTop2History: stats.currentTop2History || []
     });
     if (mount.dataset.signature === signature) return;
 
@@ -1700,6 +1791,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">至少中1碼</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--gold);">' + pct(stats.hitRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 命中至少 1 碼</div></div>' +
         '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">平均命中</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + ((stats.avgHits || 0).toFixed(2)) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">平均 / 2 碼</div></div>' +
         '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">樣本</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + (stats.samples || 0) + ' 期</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">自 ' + (stats.cutoffLabel || dateValue) + ' 起</div></div>' +
+      '</div>' +
+      '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
+          '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">目前 Top 2 歷史資料</div>' +
+          '<div style="font-size:10px;color:var(--fg-3);">直接檢查畫面上這 2 個號碼，在歷史期數中各自命中幾次</div>' +
+        '</div>' +
+        buildCurrentTop2Html(stats) +
       '</div>' +
       '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
