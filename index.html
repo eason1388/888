@@ -218,6 +218,235 @@ document.addEventListener('DOMContentLoaded', async function() {
       "        ))}",
       "        ); })}"
     );
+    template = template.replace(
+      `const strategyConsensus = useMemo(() => {
+    const summaryStrategies = ['balanced','gap','markov','markov2','ganzhi','ewma','rsi','poisson','consecutive','tailcycle'];
+    const backtestWindow = Math.min(60, Math.max(0, history.length - 20));
+    const weights = {};
+    summaryStrategies.forEach(id => {
+      let totalHits = 0;
+      let hit3plus = 0;
+      let perfect = 0;
+      let samples = 0;
+      for (let i = 0; i < backtestWindow; i++){
+        const actual = history[i];
+        const priorHistory = history.slice(i + 1, i + 1 + analysisWindow);
+        if (priorHistory.length < 20) continue;
+        const priorStats = computeFrequency(priorHistory, game.range);
+        const priorTransitions = buildTransitions(priorHistory, game.range);
+        const priorAdvanced = buildAdvancedSignals(priorHistory, game, priorTransitions);
+        const priorStructure = buildStructureSignals(priorHistory, game);
+        const pred = predictNumbers(id, priorStats, [], seed + i * 97 + id.length, game, priorTransitions, priorHistory, actual.date, priorAdvanced, priorStructure);
+        const hits = pred.filter(n => actual.draw.includes(n)).length;
+        totalHits += hits;
+        if (hits >= 3) hit3plus++;
+        if (hits === game.pick) perfect++;
+        samples++;
+      }
+      const avgHits = samples ? totalHits / samples : 0;
+      const hit3Rate = samples ? hit3plus / samples : 0;
+      const perfectRate = samples ? perfect / samples : 0;
+      weights[id] = 1 + avgHits * 1.8 + hit3Rate * 1.2 + perfectRate * 2.2;
+    });
+    return weights;
+  }, [history, analysisWindow, game, seed]);
+
+  const summaryTop2 = useMemo(() => {
+    const summaryStrategies = ['balanced','gap','markov','markov2','ganzhi','ewma','rsi','poisson','consecutive','tailcycle'];
+    const bucket = new Map();
+    summaryStrategies.forEach(id => {
+      const pred = predictNumbers(id, windowStats, locked, seed, game, transitions, history, undefined, advancedCtx, structureCtx);
+      pred.forEach(n => {
+        const conf = computeConfidence(n, id, windowStats, predCtx);
+        const strategyWeight = strategyConsensus[id] || 1;
+        const row = bucket.get(n) || { n, votes: 0, weightedVotes: 0, confSum: 0, sources: [] };
+        row.votes += 1;
+        row.weightedVotes += strategyWeight;
+        row.confSum += conf;
+        row.sources.push(id);
+        bucket.set(n, row);
+      });
+    });
+    return Array.from(bucket.values())
+      .map(row => ({ ...row, avgConf: row.confSum / row.votes }))
+      .sort((a, b) => b.weightedVotes - a.weightedVotes || b.votes - a.votes || b.avgConf - a.avgConf || a.n - b.n)
+      .slice(0, 2);
+  }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, predCtx, strategyConsensus]);`,
+      `const summaryStrategies = ['balanced','gap','markov','markov2','ganzhi','ewma','rsi','poisson','consecutive','tailcycle'];
+
+  const buildSummaryWeightMap = (sourceHistory, weightSeed = seed) => {
+    const backtestWindow = Math.min(60, Math.max(0, sourceHistory.length - 20));
+    const weights = {};
+    summaryStrategies.forEach(id => {
+      let totalHits = 0;
+      let hit3plus = 0;
+      let perfect = 0;
+      let samples = 0;
+      for (let i = 0; i < backtestWindow; i++){
+        const actual = sourceHistory[i];
+        const priorHistory = sourceHistory.slice(i + 1, i + 1 + analysisWindow);
+        if (priorHistory.length < 20) continue;
+        const priorStats = computeFrequency(priorHistory, game.range);
+        const priorTransitions = buildTransitions(priorHistory, game.range);
+        const priorAdvanced = buildAdvancedSignals(priorHistory, game, priorTransitions);
+        const priorStructure = buildStructureSignals(priorHistory, game);
+        const pred = predictNumbers(id, priorStats, [], weightSeed + i * 97 + id.length, game, priorTransitions, priorHistory, actual.date, priorAdvanced, priorStructure);
+        const hits = pred.filter(n => actual.draw.includes(n)).length;
+        totalHits += hits;
+        if (hits >= 3) hit3plus++;
+        if (hits === game.pick) perfect++;
+        samples++;
+      }
+      const avgHits = samples ? totalHits / samples : 0;
+      const hit3Rate = samples ? hit3plus / samples : 0;
+      const perfectRate = samples ? perfect / samples : 0;
+      weights[id] = 1 + avgHits * 1.8 + hit3Rate * 1.2 + perfectRate * 2.2;
+    });
+    return weights;
+  };
+
+  const buildSummaryPredCtx = (sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate) => {
+    if (!sourceHistory[0]) return { ...(sourceAdvanced || {}), ...(sourceStructure || {}), transitions: sourceTransitions, range: game.range, pairSuggestions: [] };
+    const LAST = sourceHistory[0].draw;
+    const PREV = sourceHistory[1] ? sourceHistory[1].draw : null;
+    const RECENT = sourceHistory.slice(0, Math.min(sourceHistory.length, 10)).map(h => h.draw);
+    let maxS = 0;
+    let maxS2 = 0;
+    for (let c = 1; c <= game.range; c++){
+      const s = markovScore(c, RECENT, sourceTransitions);
+      const s2 = secondOrderScore(c, LAST, PREV, sourceTransitions);
+      if (s > maxS) maxS = s;
+      if (s2 > maxS2) maxS2 = s2;
+    }
+    let ganzhiSet = null;
+    if (targetDate){
+      const gz = dayGanzhi(targetDate.getFullYear(), targetDate.getMonth() + 1, targetDate.getDate());
+      ganzhiSet = new Set(ganzhiCandidates(gz.ganIdx, gz.zhiIdx, game.range).nums);
+    }
+    return {
+      LAST,
+      PREV,
+      RECENT,
+      transitions: sourceTransitions,
+      range: game.range,
+      maxMarkov: maxS,
+      maxMarkov2: maxS2,
+      ...(sourceAdvanced || {}),
+      ...(sourceStructure || {}),
+      ganzhiSet,
+      pairSuggestions: []
+    };
+  };
+
+  const buildSummaryTop2 = ({ stats, lockedNums, currentSeed, sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate, weights }) => {
+    const sourcePredCtx = buildSummaryPredCtx(sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate);
+    const bucket = new Map();
+    summaryStrategies.forEach(id => {
+      const pred = predictNumbers(id, stats, lockedNums, currentSeed, game, sourceTransitions, sourceHistory, targetDate, sourceAdvanced, sourceStructure);
+      pred.forEach(n => {
+        const conf = computeConfidence(n, id, stats, sourcePredCtx);
+        const strategyWeight = weights[id] || 1;
+        const row = bucket.get(n) || { n, votes: 0, weightedVotes: 0, confSum: 0, sources: [] };
+        row.votes += 1;
+        row.weightedVotes += strategyWeight;
+        row.confSum += conf;
+        row.sources.push(id);
+        bucket.set(n, row);
+      });
+    });
+    return Array.from(bucket.values())
+      .map(row => ({ ...row, avgConf: row.confSum / row.votes }))
+      .sort((a, b) => b.weightedVotes - a.weightedVotes || b.votes - a.votes || b.avgConf - a.avgConf || a.n - b.n)
+      .slice(0, 2);
+  };
+
+  const strategyConsensus = useMemo(() => {
+    return buildSummaryWeightMap(history);
+  }, [history, analysisWindow, game, seed]);
+
+  const summaryTop2 = useMemo(() => {
+    return buildSummaryTop2({
+      stats: windowStats,
+      lockedNums: locked,
+      currentSeed: seed,
+      sourceHistory: history,
+      sourceTransitions: transitions,
+      sourceAdvanced: advancedCtx,
+      sourceStructure: structureCtx,
+      targetDate: undefined,
+      weights: strategyConsensus
+    });
+  }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, strategyConsensus]);
+
+  const summaryHitStats = useMemo(() => {
+    const cutoff = new Date(2026, 4, 13);
+    let samples = 0;
+    let hitAny = 0;
+    let hitBoth = 0;
+    let totalHits = 0;
+    for (let i = 0; i < history.length; i++){
+      const actual = history[i];
+      if (!actual.date || actual.date < cutoff) continue;
+      const priorHistory = history.slice(i + 1, i + 1 + analysisWindow);
+      if (priorHistory.length < 20) continue;
+      const priorStats = computeFrequency(priorHistory, game.range);
+      const priorTransitions = buildTransitions(priorHistory, game.range);
+      const priorAdvanced = buildAdvancedSignals(priorHistory, game, priorTransitions);
+      const priorStructure = buildStructureSignals(priorHistory, game);
+      const priorWeights = buildSummaryWeightMap(priorHistory, seed + i * 131);
+      const priorTop2 = buildSummaryTop2({
+        stats: priorStats,
+        lockedNums: [],
+        currentSeed: seed + i * 131,
+        sourceHistory: priorHistory,
+        sourceTransitions: priorTransitions,
+        sourceAdvanced: priorAdvanced,
+        sourceStructure: priorStructure,
+        targetDate: actual.date,
+        weights: priorWeights
+      });
+      const hits = priorTop2.filter(row => actual.draw.includes(row.n)).length;
+      samples++;
+      totalHits += hits;
+      if (hits >= 1) hitAny++;
+      if (hits === 2) hitBoth++;
+    }
+    return {
+      cutoffLabel: '05.13',
+      samples,
+      hitRate: samples ? hitAny / samples : 0,
+      bothRate: samples ? hitBoth / samples : 0,
+      avgHits: samples ? totalHits / samples : 0
+    };
+  }, [history, analysisWindow, game, seed]);`
+    );
+    template = template.replace(
+      `<div style={{fontSize:11,color:'var(--fg-3)',lineHeight:1.6}}>
+                綜合 S-03、S-04、S-06、S-07、S-08、S-11、S-12、S-13、S-14、S-15 的結果後，目前最有共識的 2 個號碼。
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>`,
+      `<div style={{fontSize:11,color:'var(--fg-3)',lineHeight:1.6}}>
+                綜合 S-03、S-04、S-06、S-07、S-08、S-11、S-12、S-13、S-14、S-15 的結果後，目前最有共識的 2 個號碼。
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(96px, 1fr))',gap:8}}>
+                <div style={{padding:'10px 8px',border:'1px solid var(--line)',borderRadius:8,background:'var(--bg-3)'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>歷史區間</div>
+                  <div style={{marginTop:4,fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--fg)'}}>自 {summaryHitStats.cutoffLabel} 起</div>
+                  <div style={{marginTop:4,fontSize:10,color:'var(--fg-3)'}}>{summaryHitStats.samples} 期樣本</div>
+                </div>
+                <div style={{padding:'10px 8px',border:'1px solid var(--line)',borderRadius:8,background:'var(--bg-3)'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>歷史命中率</div>
+                  <div style={{marginTop:4,fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--gold)'}}>{(summaryHitStats.hitRate * 100).toFixed(0)}%</div>
+                  <div style={{marginTop:4,fontSize:10,color:'var(--fg-3)'}}>至少中 1 碼</div>
+                </div>
+                <div style={{padding:'10px 8px',border:'1px solid var(--line)',borderRadius:8,background:'var(--bg-3)'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--fg-3)'}}>平均命中</div>
+                  <div style={{marginTop:4,fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--fg)'}}>{summaryHitStats.avgHits.toFixed(2)}</div>
+                  <div style={{marginTop:4,fontSize:10,color:'var(--fg-3)'}}>每期 / 2 碼</div>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>`,
+    );
 
     const resourceScript = '<script>window.__resources = ' +
       JSON.stringify(resourceMap).split('</' + 'script>').join('<\\/' + 'script>') +
