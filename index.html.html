@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     );
     template = template.replace(
       "  const [lookupQuery, setLookupQuery] = useState('');",
-      "  const [lookupQuery, setLookupQuery] = useState('');\n  const [summaryStartDate, setSummaryStartDate] = useState('2026-05-13');"
+      "  const [lookupQuery, setLookupQuery] = useState('');\n  const [summaryStartDate, setSummaryStartDate] = useState('2026-05-13');\n  const [summaryHistoryCache, setSummaryHistoryCache] = useState([]);\n  const [summaryHistoryStatus, setSummaryHistoryStatus] = useState({ phase: 'idle', progress: 0, total: 0 });\n  const [summaryRunId, setSummaryRunId] = useState(0);"
     );
     template = template.replace(
       "  const prevDrawCountRef = useRef(currentUserDraws.length);",
@@ -278,6 +278,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, predCtx, strategyConsensus]);`,
       `const summaryStrategies = ['balanced','gap','markov','markov2','ganzhi','ewma','rsi','poisson','consecutive','tailcycle'];
 
+  const formatSummaryDateLabel = (value) => {
+    if (!value) return '--';
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return '--';
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('.');
+  };
+
   const buildSummaryPredCtx = (sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate) => {
     if (!sourceHistory[0]) return { ...(sourceAdvanced || {}), ...(sourceStructure || {}), transitions: sourceTransitions, range: game.range, pairSuggestions: [] };
     const LAST = sourceHistory[0].draw;
@@ -351,20 +358,116 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, strategyConsensus]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!summaryRunId) return () => { cancelled = true; };
+
+    const cacheKey = (() => {
+      const latest = history[0];
+      if (!latest) return '';
+      const latestStamp = latest.date ? latest.date.getTime() : latest.period;
+      return ['lotto-summary-manual-v1', game.id, history.length, latestStamp, summaryStartDate].join(':');
+    })();
+
+    try {
+      const cachedText = cacheKey ? localStorage.getItem(cacheKey) : null;
+      if (cachedText) {
+        const cached = JSON.parse(cachedText);
+        if (cached && Array.isArray(cached.rows)) {
+          setSummaryHistoryCache(cached.rows);
+          setSummaryHistoryStatus({ phase: 'ready', progress: cached.rows.length, total: cached.rows.length });
+          return () => { cancelled = true; };
+        }
+      }
+    } catch {}
+
+    const fallbackStart = '2026-05-13';
+    const startText = /^\d{4}-\d{2}-\d{2}$/.test(summaryStartDate || '') ? summaryStartDate : fallbackStart;
+    const cutoffTime = new Date(startText + 'T00:00:00').getTime();
+    const sampleIndexes = [];
+    const summaryHistoryWindow = Math.min(analysisWindow, 120);
+    const maxSamples = Math.min(12, history.length);
+    for (let i = 0; i < maxSamples; i++) {
+      const actual = history[i];
+      if (!actual || !actual.date || actual.date.getTime() < cutoffTime) continue;
+      const priorHistory = history.slice(i + 1, i + 1 + summaryHistoryWindow);
+      if (priorHistory.length < 20) continue;
+      sampleIndexes.push(i);
+    }
+
+    setSummaryHistoryCache([]);
+    setSummaryHistoryStatus({ phase: sampleIndexes.length ? 'running' : 'idle', progress: 0, total: sampleIndexes.length });
+    if (!sampleIndexes.length) return () => { cancelled = true; };
+
+    setTimeout(async () => {
+      const rows = [];
+      for (let cursor = 0; cursor < sampleIndexes.length; cursor++) {
+        if (cancelled) return;
+        const i = sampleIndexes[cursor];
+        const actual = history[i];
+        const priorHistory = history.slice(i + 1, i + 1 + summaryHistoryWindow);
+        const priorStats = computeFrequency(priorHistory, game.range);
+        const priorTransitions = buildTransitions(priorHistory, game.range);
+        const priorAdvanced = buildAdvancedSignals(priorHistory, game, priorTransitions);
+        const priorStructure = buildStructureSignals(priorHistory, game);
+        const priorTop2 = buildSummaryTop2({
+          stats: priorStats,
+          lockedNums: [],
+          currentSeed: seed + i * 131,
+          sourceHistory: priorHistory,
+          sourceTransitions: priorTransitions,
+          sourceAdvanced: priorAdvanced,
+          sourceStructure: priorStructure,
+          targetDate: actual.date,
+          weights: strategyConsensus
+        });
+        rows.push({
+          cutoffTime: actual.date.getTime(),
+          dateLabel: formatSummaryDateLabel(actual.date),
+          periodLabel: actual.periodLabel || ('#' + actual.period),
+          picks: priorTop2.map(row => row.n),
+          draw: actual.draw.slice(),
+          hits: priorTop2.filter(row => actual.draw.includes(row.n)).length
+        });
+        setSummaryHistoryCache(rows.slice());
+        setSummaryHistoryStatus({ phase: 'running', progress: cursor + 1, total: sampleIndexes.length });
+        await new Promise(resolve => setTimeout(resolve, 16));
+      }
+      if (cancelled) return;
+      setSummaryHistoryStatus({ phase: 'ready', progress: rows.length, total: rows.length });
+      try { if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify({ rows })); } catch {}
+    }, 120);
+
+    return () => { cancelled = true; };
+  }, [summaryRunId, summaryStartDate, history, analysisWindow, game, seed, strategyConsensus]);
+
   const summaryHitStats = useMemo(() => {
+    const fallbackStart = '2026-05-13';
+    const startText = /^\d{4}-\d{2}-\d{2}$/.test(summaryStartDate || '') ? summaryStartDate : fallbackStart;
+    const [startYear, startMonth, startDay] = startText.split('-').map(Number);
+    const cutoff = new Date(startYear, startMonth - 1, startDay);
+    const cutoffTime = cutoff.getTime();
+    const eligible = summaryHistoryCache.filter(row => row.cutoffTime >= cutoffTime);
+    const samples = eligible.length;
+    const hitAny = eligible.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
+    const hitBoth = eligible.reduce((sum, row) => sum + (row.hits === 2 ? 1 : 0), 0);
+    const totalHits = eligible.reduce((sum, row) => sum + row.hits, 0);
     return {
-      cutoffLabel: '輕量模式',
-      samples: 0,
-      hitRate: 0,
-      bothRate: 0,
-      avgHits: 0,
-      recent: []
+      cutoffLabel: formatSummaryDateLabel(cutoff),
+      samples,
+      hitRate: samples ? hitAny / samples : 0,
+      bothRate: samples ? hitBoth / samples : 0,
+      avgHits: samples ? totalHits / samples : 0,
+      recent: eligible.slice(0, 6).map(({ dateLabel, periodLabel, picks, draw, hits }) => ({ dateLabel, periodLabel, picks, draw, hits })),
+      phase: summaryHistoryStatus.phase,
+      progress: summaryHistoryStatus.progress,
+      total: summaryHistoryStatus.total
     };
-  }, []);`
+  }, [summaryHistoryCache, summaryStartDate, summaryHistoryStatus]);`
     );
     template = template.replace(
       "  }, [history, analysisWindow, game, seed, summaryStartDate]);",
-      "  }, [history, analysisWindow, game, seed, summaryStartDate]);\n  useEffect(() => {\n    window.__lottoSummaryBridge = {\n      summaryHitStats,\n      summaryTop2,\n      summaryStartDate,\n      setSummaryStartDate\n    };\n  }, [summaryHitStats, summaryTop2, summaryStartDate]);"
+      "  }, [history, analysisWindow, game, seed, summaryStartDate]);\n  useEffect(() => {\n    window.__lottoSummaryBridge = {\n      summaryHitStats,\n      summaryTop2,\n      summaryStartDate,\n      setSummaryStartDate,\n      runSummaryBacktest: () => setSummaryRunId((prev) => prev + 1)\n    };\n  }, [summaryHitStats, summaryTop2, summaryStartDate, summaryRunId]);"
     );
     template = template.replace(
       `<div style={{fontSize:11,color:'var(--fg-3)',lineHeight:1.6}}>
