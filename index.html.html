@@ -622,6 +622,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         function render() {
           const body = findSummaryBody();
           if (!body) return false;
+          if (typeof window.__lottoSummaryManualRender === 'function') return false;
           let mount = body.querySelector('[data-summary-inline]');
           if (!mount) {
             mount = document.createElement('div');
@@ -727,6 +728,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         const START_FALLBACK = '2026-05-13';
 
         function notifySummaryRefresh() {
+          if (typeof window.__lottoSummaryManualRender === 'function') {
+            window.requestAnimationFrame(() => window.__lottoSummaryManualRender());
+          }
           if (typeof window.__lottoEnhanceSummary === 'function') {
             window.requestAnimationFrame(() => window.__lottoEnhanceSummary());
           }
@@ -812,6 +816,13 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
           const card = findSummaryCard();
           if (!card) return [];
+          const text = card.textContent || '';
+          const matched = [...text.matchAll(/(\d{2})共同入選/g)]
+            .map((entry) => Number(entry[1]))
+            .filter((value) => Number.isFinite(value));
+          if (matched.length >= 2) {
+            return matched.slice(0, 2);
+          }
           const values = [];
           for (const node of Array.from(card.querySelectorAll('div'))) {
             const text = (node.textContent || '').trim();
@@ -919,6 +930,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const card = title.closest('.card');
         const body = card ? card.querySelector('.card-b') : null;
         if (!body) return;
+        if (typeof window.__lottoSummaryManualRender === 'function') return;
         let mount = body.querySelector('[data-summary-enhanced]');
         if (!mount) {
           mount = document.createElement('div');
@@ -1009,6 +1021,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (!bridge || !bridge.summaryHitStats) return;
           const body = findSummaryBody();
           if (!body) return;
+          if (typeof window.__lottoSummaryManualRender === 'function') return;
           let mount = body.querySelector('[data-summary-enhanced]');
           if (!mount) {
             mount = document.createElement('div');
@@ -1126,6 +1139,10 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (!body) return false;
           if (!bridge || !bridge.summaryHitStats) return false;
 
+          body.querySelectorAll('[data-summary-inline], [data-summary-enhanced], [data-summary-enhanced-fallback]').forEach((node) => {
+            node.remove();
+          });
+
           let mount = body.querySelector('[data-summary-manual]');
           if (!mount) {
             mount = document.createElement('div');
@@ -1220,6 +1237,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
           return true;
         }
+
+        window.__lottoSummaryManualRender = renderSummaryPanel;
+        window.__lottoEnhanceSummary = renderSummaryPanel;
+        window.__lottoRenderSummaryFallback = renderSummaryPanel;
 
         let tries = 0;
         function boot() {
@@ -1371,6 +1392,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const bridge = window.__lottoSummaryBridge;
       const body = findSummaryBody();
       if (!body) return;
+      if (typeof window.__lottoSummaryManualRender === 'function') return;
 
       let mount = body.querySelector('[data-summary-enhanced-fallback]');
       if (!mount) {
