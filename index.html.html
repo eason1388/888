@@ -41,6 +41,35 @@
 document.addEventListener('DOMContentLoaded', async function() {
   const loading = document.getElementById('__bundler_loading');
   function setStatus(msg) { if (loading) loading.textContent = msg; }
+  async function syncLatest539() {
+    try {
+      const res = await fetch('./data/d539-latest.json?v=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      if (!payload || !Array.isArray(payload.rows)) return;
+      const key = 'lotto_user_draws_d539';
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const seen = new Set(existing.map((u) => `${u.year}-${u.month}-${u.day}`));
+      let changed = false;
+      payload.rows.forEach((row) => {
+        if (!Array.isArray(row) || row.length < 9) return;
+        const [year, month, day, n1, n2, n3, n4, n5, period] = row;
+        const stamp = `${year}-${month}-${day}`;
+        if (seen.has(stamp)) return;
+        seen.add(stamp);
+        existing.push({
+          year,
+          month,
+          day,
+          draw: [n1, n2, n3, n4, n5],
+          period: String(period).replace(/\D/g, '').replace(/^(\d{3})000(\d{3})$/, '$1$2'),
+          autoSynced: true
+        });
+        changed = true;
+      });
+      if (changed) localStorage.setItem(key, JSON.stringify(existing));
+    } catch {}
+  }
 
   // Error sink persists across replaceWith since it's on window, not the DOM.
   window.addEventListener('error', function(e) {
@@ -54,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }, true);
 
   try {
+    await syncLatest539();
     const manifestEl = document.querySelector('script[type="__bundler/manifest"]');
     const templateEl = document.querySelector('script[type="__bundler/template"]');
     if (!manifestEl || !templateEl) {
