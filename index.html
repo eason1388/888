@@ -1930,11 +1930,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   function buildCurrentTop2Html(stats) {
-    const values = Array.isArray(stats.currentTop2Values) ? stats.currentTop2Values : [];
-    const perNumber = Array.isArray(stats.currentTop2PerNumber) ? stats.currentTop2PerNumber : [];
-    const historyRows = Array.isArray(stats.currentTop2History) ? stats.currentTop2History.slice(0, 10) : [];
-    if (!values.length) {
-      return '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">目前還沒有可統計的 Top 2 號碼。</div>';
+    const historyRows = Array.isArray(stats.recent) && stats.recent.length
+      ? stats.recent.slice(0, 10)
+      : (Array.isArray(stats.currentTop2History) ? stats.currentTop2History.slice(0, 10) : []);
+    const perNumber = Array.isArray(stats.perNumber) && stats.perNumber.length
+      ? stats.perNumber.slice(0, 8)
+      : (Array.isArray(stats.currentTop2PerNumber) ? stats.currentTop2PerNumber.slice(0, 8) : []);
+    if (!historyRows.length) {
+      return '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">目前日期範圍內還沒有可顯示的歷史預測 2 碼資料。</div>';
     }
     const cardsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">' +
       perNumber.map((row) =>
@@ -1953,12 +1956,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             '<div style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 72px;gap:8px;align-items:center;padding:8px 0;' + (idx ? 'border-top:1px solid var(--line);' : '') + 'font-size:10px;">' +
               '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.dateLabel || '') + '</div>' +
               '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.periodLabel || '') + '</div>' +
-              '<div style="font-size:10px;color:var(--fg-2);line-height:1.5;"><div>Top 2 ' + values.map((n) => String(n).padStart(2, '0')).join(' ') + '</div><div>實開 ' + ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div><div>命中 ' + ((((row.matched || []).length ? row.matched : []).map((n) => String(n).padStart(2, '0')).join(' ')) || '未中') + '</div></div>' +
+              '<div style="font-size:10px;color:var(--fg-2);line-height:1.5;"><div>預測 ' + (((row.picks || []).map((n) => String(n).padStart(2, '0')).join(' ')) || '--') + '</div><div>實開 ' + ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div><div>命中 ' + ((((row.matched || []).length ? row.matched : []).map((n) => String(n).padStart(2, '0')).join(' ')) || '未中') + '</div></div>' +
               '<div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';text-align:right;">' + (row.hits || 0) + '/2</div>' +
             '</div>'
           ).join('') +
         '</div>'
-      : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;margin-top:10px;">目前日期範圍內沒有可顯示的 Top 2 歷史紀錄。</div>';
+      : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;margin-top:10px;">目前日期範圍內沒有可顯示的歷史預測紀錄。</div>';
     return cardsHtml + rowsHtml;
   }
 
@@ -2033,10 +2036,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       '</div>' +
       '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
-          '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">目前 Top 2 歷史資料</div>' +
-          '<div style="font-size:10px;color:var(--fg-3);">直接檢查畫面上這 2 個號碼，在歷史期數中各自命中幾次</div>' +
+          '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">歷史每期預測 2 碼摘要</div>' +
+          '<div style="font-size:10px;color:var(--fg-3);">這裡顯示每一期當時實際預測的 2 碼，不再固定拿目前 Top 2 去套全部歷史</div>' +
         '</div>' +
         buildCurrentTop2Html({
+          recent,
+          perNumber: stats.perNumber || [],
           currentTop2Values: effectiveCurrentTop2Values,
           currentTop2PerNumber: effectiveCurrentTop2PerNumber,
           currentTop2History: effectiveCurrentTop2History
