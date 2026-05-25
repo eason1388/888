@@ -351,12 +351,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       currentSeed: seed,
       sourceHistory: history,
       sourceTransitions: transitions,
-      sourceAdvanced: advancedCtx,
-      sourceStructure: structureCtx,
+      sourceAdvanced: buildAdvancedSignals(history, game, transitions),
+      sourceStructure: buildStructureSignals(history, game),
       targetDate: undefined,
       weights: strategyConsensus
     });
-  }, [windowStats, locked, seed, game, transitions, history, advancedCtx, structureCtx, strategyConsensus]);
+  }, [windowStats, locked, seed, game, transitions, history, strategyConsensus]);
 
   useEffect(() => {
     let cancelled = false;
