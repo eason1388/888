@@ -1625,13 +1625,23 @@ document.addEventListener('DOMContentLoaded', async function() {
       })();
     <\/script>`;
     const responsiveStyle = `<style>
+      .grid { align-items: start !important; }
+      .grid > * { align-self: start !important; min-height: 0 !important; }
+      .panel {
+        align-self: start !important;
+        position: sticky !important;
+        top: 24px !important;
+        max-height: calc(100vh - 32px) !important;
+        overflow-y: auto !important;
+        padding-right: 4px !important;
+      }
       @media (max-width: 900px) {
         .app { max-width: none !important; padding: 20px 14px 48px !important; }
         .head, .userio, .grid, .math { grid-template-columns: 1fr !important; }
         .head { display: flex !important; flex-direction: column !important; align-items: stretch !important; }
         .meta, .tabs, .uform-row, .pred-actions, .tracker-row, .draw { flex-wrap: wrap !important; }
         .grid { gap: 16px !important; }
-        .panel { gap: 16px !important; }
+        .panel { gap: 16px !important; position: static !important; max-height: none !important; overflow: visible !important; padding-right: 0 !important; }
         .card-h, .card-b, .tabs, .legend { padding-left: 14px !important; padding-right: 14px !important; }
         .card-b { padding-top: 14px !important; padding-bottom: 14px !important; }
         .strategy { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
