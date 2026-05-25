@@ -2033,17 +2033,26 @@ document.addEventListener('DOMContentLoaded', async function() {
         combinedTop2.setAttribute('data-summary-top2-combined', '1');
       }
       const topPick = effectiveCurrentTop2Values[0];
+      const topPickMeta = bridge && Array.isArray(bridge.summaryTop2)
+        ? bridge.summaryTop2.find((row) => row && row.n === topPick)
+        : null;
+      const topPickVotes = topPickMeta && Number.isFinite(topPickMeta.votes) ? topPickMeta.votes : null;
+      const topPickConf = topPickMeta && Number.isFinite(topPickMeta.avgConf) ? Math.round(topPickMeta.avgConf * 100) : null;
       combinedTop2.innerHTML =
-        '<div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg-3);margin-top:12px;">' +
+        '<div style="padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(135deg, color-mix(in oklch, var(--gold) 10%, var(--bg-3)), var(--bg-3));margin-top:12px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
             '<div style="font:700 12px var(--ui);color:var(--fg);">本期最有機會號碼</div>' +
             '<div style="font:10px var(--mono);letter-spacing:0.12em;color:var(--fg-3);">TOP PICK</div>' +
           '</div>' +
-          '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px;">' +
-            '<div style="width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--gold);color:#151515;font:700 22px var(--mono);box-shadow:inset 0 1px 0 rgba(255,255,255,0.35);">' + String(topPick).padStart(2, '0') + '</div>' +
-            '<div>' +
-              '<div style="font:700 24px var(--mono);color:var(--gold);letter-spacing:0.08em;">' + String(topPick).padStart(2, '0') + '</div>' +
-              '<div style="margin-top:4px;font-size:11px;color:var(--fg-3);">綜合各策略後排名第 1</div>' +
+          '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px;">' +
+            '<div style="width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--gold);color:#151515;font:700 26px var(--mono);box-shadow:0 10px 24px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.35);">' + String(topPick).padStart(2, '0') + '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:6px;">' +
+              '<div style="font:700 28px var(--mono);color:var(--gold);letter-spacing:0.08em;line-height:1;">' + String(topPick).padStart(2, '0') + '</div>' +
+              '<div style="font-size:11px;color:var(--fg-3);">綜合各策略後排名第 1</div>' +
+              '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+                (topPickVotes !== null ? '<span style="padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,0.03);font:10px var(--mono);color:var(--fg-2);">共同入選 ' + topPickVotes + '/10</span>' : '') +
+                (topPickConf !== null ? '<span style="padding:4px 8px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,0.03);font:10px var(--mono);color:var(--fg-2);">平均信心 ' + topPickConf + '%</span>' : '') +
+              '</div>' +
             '</div>' +
           '</div>' +
         '</div>';
