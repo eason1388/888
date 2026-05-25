@@ -223,6 +223,27 @@ document.addEventListener('DOMContentLoaded', async function() {
       "        ); })}"
     );
     template = template.replace(
+      "  const summaryTop2 = useMemo(() => {",
+      "  const advancedCtx = useMemo(() => buildAdvancedSignals(history, game, transitions), [history, game, transitions]);\n" +
+      "  const structureCtx = useMemo(() => buildStructureSignals(history, game), [history, game]);\n" +
+      "  const predCtx = useMemo(() => {\n" +
+      "    if (!history[0]) return { ...(advancedCtx || {}), ...(structureCtx || {}), transitions, range: game.range, pairSuggestions: [] };\n" +
+      "    const LAST = history[0].draw;\n" +
+      "    const PREV = history[1] ? history[1].draw : null;\n" +
+      "    const RECENT = history.slice(0, Math.min(history.length, 10)).map(h => h.draw);\n" +
+      "    let maxS = 0;\n" +
+      "    let maxS2 = 0;\n" +
+      "    for (let c = 1; c <= game.range; c++){\n" +
+      "      const s = markovScore(c, RECENT, transitions);\n" +
+      "      const s2 = secondOrderScore(c, LAST, PREV, transitions);\n" +
+      "      if (s > maxS) maxS = s;\n" +
+      "      if (s2 > maxS2) maxS2 = s2;\n" +
+      "    }\n" +
+      "    return { LAST, PREV, RECENT, transitions, range: game.range, maxMarkov: maxS, maxMarkov2: maxS2, ...(advancedCtx || {}), ...(structureCtx || {}), pairSuggestions: [] };\n" +
+      "  }, [history, transitions, game.range, advancedCtx, structureCtx]);\n\n" +
+      "  const summaryTop2 = useMemo(() => {"
+    );
+    template = template.replace(
       `const strategyConsensus = useMemo(() => {
     const summaryStrategies = ['balanced','gap','markov','markov2','ganzhi','ewma','rsi','poisson','consecutive','tailcycle'];
     const backtestWindow = Math.min(60, Math.max(0, history.length - 20));
