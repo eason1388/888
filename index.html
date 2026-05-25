@@ -1972,6 +1972,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     const effectiveCurrentTop2History = Array.isArray(stats.currentTop2History) && stats.currentTop2History.length
       ? stats.currentTop2History
       : (fallbackCurrentStats.currentTop2History || []);
+    const originalTop2Cards = Array.from(body.querySelectorAll('div')).filter((node) => {
+      const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text.includes('共同入選')) return false;
+      if (!/\d{2}/.test(text) || !/\d+\/\d+/.test(text)) return false;
+      return !Array.from(node.children || []).some((child) => (((child.textContent || '').replace(/\s+/g, ' ').trim()).includes('共同入選')));
+    });
+    const originalTop2Wrapper = originalTop2Cards.length >= 2 &&
+      originalTop2Cards[0].parentElement &&
+      originalTop2Cards[0].parentElement === originalTop2Cards[1].parentElement
+        ? originalTop2Cards[0].parentElement
+        : null;
     const signature = JSON.stringify({
       dateValue,
       phase,
@@ -1993,6 +2004,44 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!bridge) statusText = '尚未建立摘要回測橋接，請稍後再試。';
     else if (phase === 'running') statusText = '回測中 ' + (stats.progress || 0) + '/' + (stats.total || 0);
     else if (phase === 'ready') statusText = '已完成 ' + (stats.total || 0) + ' 期回測';
+
+    let combinedTop2 = body.querySelector('[data-summary-top2-combined]');
+    if (effectiveCurrentTop2Values.length >= 2) {
+      if (!combinedTop2) {
+        combinedTop2 = document.createElement('div');
+        combinedTop2.setAttribute('data-summary-top2-combined', '1');
+      }
+      combinedTop2.innerHTML =
+        '<div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg-3);margin-top:12px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
+            '<div style="font:700 12px var(--ui);color:var(--fg);">本期預測 2 碼</div>' +
+            '<div style="font:10px var(--mono);letter-spacing:0.12em;color:var(--fg-3);">TOP 2 PICK</div>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
+            effectiveCurrentTop2Values.slice(0, 2).map((n) =>
+              '<div style="width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--gold);color:#151515;font:700 18px var(--mono);box-shadow:inset 0 1px 0 rgba(255,255,255,0.35);">' + String(n).padStart(2, '0') + '</div>'
+            ).join('') +
+            '<div style="font:700 20px var(--mono);color:var(--gold);letter-spacing:0.08em;">' + effectiveCurrentTop2Values.slice(0, 2).map((n) => String(n).padStart(2, '0')).join('  ') + '</div>' +
+          '</div>' +
+        '</div>';
+      body.insertBefore(combinedTop2, originalTop2Wrapper || mount);
+      if (originalTop2Wrapper) {
+        originalTop2Wrapper.style.display = 'none';
+      } else {
+        originalTop2Cards.forEach((card) => {
+          card.style.display = 'none';
+        });
+      }
+    } else if (combinedTop2) {
+      combinedTop2.remove();
+      if (originalTop2Wrapper) {
+        originalTop2Wrapper.style.display = '';
+      } else {
+        originalTop2Cards.forEach((card) => {
+          card.style.display = '';
+        });
+      }
+    }
 
     mount.innerHTML =
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;">' +
