@@ -433,20 +433,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       .map((row) => typeof row === 'number' ? row : row && typeof row.n === 'number' ? row.n : Number(row))
       .filter((value) => Number.isFinite(value))
       .slice(0, 2);
-    const currentTop2History = history
-      .filter((row) => row && row.date && row.date.getTime() >= cutoffTime)
-      .slice(0, 20)
-      .map((row) => {
-        const matched = currentTop2Values.filter((n) => (row.draw || []).includes(n));
-        return {
-          dateLabel: formatSummaryDateLabel(row.date),
-          periodLabel: row.periodLabel || ('#' + row.period),
-          picks: currentTop2Values.slice(),
-          draw: (row.draw || []).slice(),
-          hits: matched.length,
-          matched
-        };
-      });
+    const currentTop2History = eligible
+      .slice(0, 10)
+      .map(({ dateLabel, periodLabel, picks, draw, hits, matched }) => ({ dateLabel, periodLabel, picks, draw, hits, matched }));
     const samples = eligible.length;
     const hitAny = eligible.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
     const hitBoth = eligible.reduce((sum, row) => sum + (row.hits === 2 ? 1 : 0), 0);
@@ -459,16 +448,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         if ((row.draw || []).includes(n)) perNumberHits[n].hits += 1;
       });
     });
-    const currentTop2PerNumber = currentTop2Values.map((n) => {
-      const hits = currentTop2History.reduce((sum, row) => sum + ((row.draw || []).includes(n) ? 1 : 0), 0);
-      const samples = currentTop2History.length;
-      return {
-        n,
-        hits,
-        samples,
-        hitRate: samples ? hits / samples : 0
-      };
-    });
+    const currentTop2PerNumber = Object.values(perNumberHits)
+      .map((row) => ({ ...row, hitRate: row.samples ? row.hits / row.samples : 0 }))
+      .sort((a, b) => b.hitRate - a.hitRate || b.hits - a.hits || a.n - b.n);
     const currentTop2HitAny = currentTop2History.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
     const currentTop2HitBoth = currentTop2History.reduce((sum, row) => sum + (row.hits === 2 ? 1 : 0), 0);
     return {
@@ -819,6 +801,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (typeof window.__lottoRenderSummaryFallback === 'function') {
             window.requestAnimationFrame(() => window.__lottoRenderSummaryFallback());
           }
+          if (typeof window.__lottoRenderSummaryHotfix === 'function') {
+            window.requestAnimationFrame(() => window.__lottoRenderSummaryHotfix());
+          }
         }
 
         function formatCutoffLabel(value) {
@@ -938,49 +923,254 @@ document.addEventListener('DOMContentLoaded', async function() {
           return values;
         }
 
-        function buildStandaloneStats(startDate) {
-          const picks = readTop2FromCard();
-          const cutoff = normalizeDate(startDate) || START_FALLBACK;
-          const eligible = collectHistoryRows()
-            .filter((row) => !row.dateIso || row.dateIso >= cutoff)
-            .map((row) => {
-              const hits = picks.reduce((sum, value) => sum + (row.draw.includes(value) ? 1 : 0), 0);
-              const matched = picks.filter((value) => row.draw.includes(value));
-              return {
-                dateLabel: row.dateLabel,
-                periodLabel: row.periodLabel,
-                picks: picks.slice(),
-                draw: row.draw.slice(),
-                hits,
-                matched
-              };
+        const STANDALONE_SUMMARY_STRATEGIES = ['balanced', 'gap', 'markov', 'markov2', 'ganzhi', 'ewma', 'rsi', 'poisson', 'consecutive', 'tailcycle'];
+
+        function getStandaloneGame() {
+          return (window.GAMES && window.GAMES.d539) || { id: 'd539', range: 39, pick: 5, defaultWindow: 120 };
+        }
+
+        function buildStandalonePredCtx(game, sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate) {
+          if (!sourceHistory[0]) {
+            return Object.assign({}, sourceAdvanced || {}, sourceStructure || {}, {
+              transitions: sourceTransitions,
+              range: game.range,
+              pairSuggestions: []
             });
+          }
+          const LAST = sourceHistory[0].draw;
+          const PREV = sourceHistory[1] ? sourceHistory[1].draw : null;
+          const RECENT = sourceHistory.slice(0, Math.min(sourceHistory.length, 10)).map((row) => row.draw);
+          let maxMarkov = 0;
+          let maxMarkov2 = 0;
+          if (typeof window.markovScore === 'function' && typeof window.secondOrderScore === 'function') {
+            for (let candidate = 1; candidate <= game.range; candidate += 1) {
+              maxMarkov = Math.max(maxMarkov, window.markovScore(candidate, RECENT, sourceTransitions));
+              maxMarkov2 = Math.max(maxMarkov2, window.secondOrderScore(candidate, LAST, PREV, sourceTransitions));
+            }
+          }
+          let ganzhiSet = null;
+          if (targetDate && typeof window.dayGanzhi === 'function' && typeof window.ganzhiCandidates === 'function') {
+            const ganzhi = window.dayGanzhi(targetDate.getFullYear(), targetDate.getMonth() + 1, targetDate.getDate());
+            ganzhiSet = new Set(window.ganzhiCandidates(ganzhi.ganIdx, ganzhi.zhiIdx, game.range).nums);
+          }
+          return Object.assign({}, sourceAdvanced || {}, sourceStructure || {}, {
+            LAST,
+            PREV,
+            RECENT,
+            transitions: sourceTransitions,
+            range: game.range,
+            maxMarkov,
+            maxMarkov2,
+            ganzhiSet,
+            pairSuggestions: []
+          });
+        }
+
+        function buildStandaloneTop2(options) {
+          const {
+            game,
+            stats,
+            sourceHistory,
+            sourceTransitions,
+            sourceAdvanced,
+            sourceStructure,
+            targetDate,
+            currentSeed,
+            lockedNums,
+            strategyWeights
+          } = options;
+          if (
+            !stats ||
+            typeof window.predictNumbers !== 'function' ||
+            typeof window.computeConfidence !== 'function'
+          ) {
+            return [];
+          }
+          const predCtx = buildStandalonePredCtx(game, sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate);
+          const bucket = new Map();
+          STANDALONE_SUMMARY_STRATEGIES.forEach((id) => {
+            const pred = window.predictNumbers(
+              id,
+              stats,
+              lockedNums || [],
+              currentSeed,
+              game,
+              sourceTransitions,
+              sourceHistory,
+              targetDate,
+              sourceAdvanced,
+              sourceStructure
+            );
+            pred.forEach((n) => {
+              const confidence = window.computeConfidence(n, id, stats, predCtx);
+              const strategyWeight = (strategyWeights && strategyWeights[id]) || 1;
+              const row = bucket.get(n) || { n, votes: 0, weightedVotes: 0, confSum: 0, sources: [] };
+              row.votes += 1;
+              row.weightedVotes += strategyWeight;
+              row.confSum += confidence;
+              row.sources.push(id);
+              bucket.set(n, row);
+            });
+          });
+          return Array.from(bucket.values())
+            .map((row) => Object.assign({}, row, { avgConf: row.votes ? row.confSum / row.votes : 0 }))
+            .sort((a, b) => b.weightedVotes - a.weightedVotes || b.votes - a.votes || b.avgConf - a.avgConf || a.n - b.n)
+            .slice(0, 2);
+        }
+
+        function buildStandaloneStrategyWeights(historyRows, game, summaryHistoryWindow, baseSeed) {
+          if (
+            typeof window.computeFrequency !== 'function' ||
+            typeof window.buildTransitions !== 'function' ||
+            typeof window.buildAdvancedSignals !== 'function' ||
+            typeof window.buildStructureSignals !== 'function' ||
+            typeof window.predictNumbers !== 'function'
+          ) {
+            return Object.fromEntries(STANDALONE_SUMMARY_STRATEGIES.map((id) => [id, 1]));
+          }
+          const weights = {};
+          const backtestWindow = Math.min(40, Math.max(0, historyRows.length - 20));
+          STANDALONE_SUMMARY_STRATEGIES.forEach((id) => {
+            let totalHits = 0;
+            let hit3plus = 0;
+            let perfect = 0;
+            let samples = 0;
+            for (let i = 0; i < backtestWindow; i += 1) {
+              const actual = historyRows[i];
+              const priorHistory = historyRows.slice(i + 1, i + 1 + summaryHistoryWindow);
+              if (priorHistory.length < 20) continue;
+              const priorStats = window.computeFrequency(priorHistory, game.range);
+              const priorTransitions = window.buildTransitions(priorHistory, game.range);
+              const priorAdvanced = window.buildAdvancedSignals(priorHistory, game, priorTransitions);
+              const priorStructure = window.buildStructureSignals(priorHistory, game);
+              const pred = window.predictNumbers(
+                id,
+                priorStats,
+                [],
+                baseSeed + i * 97 + id.length,
+                game,
+                priorTransitions,
+                priorHistory,
+                actual.date,
+                priorAdvanced,
+                priorStructure
+              );
+              const hits = pred.filter((n) => actual.draw.includes(n)).length;
+              totalHits += hits;
+              if (hits >= 3) hit3plus += 1;
+              if (hits === game.pick) perfect += 1;
+              samples += 1;
+            }
+            const avgHits = samples ? totalHits / samples : 0;
+            const hit3Rate = samples ? hit3plus / samples : 0;
+            const perfectRate = samples ? perfect / samples : 0;
+            weights[id] = 1 + avgHits * 1.8 + hit3Rate * 1.2 + perfectRate * 2.2;
+          });
+          return weights;
+        }
+
+        function buildStandaloneStats(startDate) {
+          const currentTop2 = readTop2FromCard();
+          const cutoff = normalizeDate(startDate) || START_FALLBACK;
+          const game = getStandaloneGame();
+          const historyRows = collectHistoryRows().map((row) => {
+            const dateValue = row.dateIso ? new Date(row.dateIso + 'T00:00:00') : null;
+            return Object.assign({}, row, { date: dateValue });
+          });
+          const summaryHistoryWindow = Math.min(game.defaultWindow || 120, 120);
+          const baseSeed = Number(String((historyRows[0] && historyRows[0].period) || '').slice(-6)) || 539;
+          const strategyWeights = buildStandaloneStrategyWeights(historyRows, game, summaryHistoryWindow, baseSeed);
+          const eligible = [];
+          for (let i = 0; i < historyRows.length; i += 1) {
+            const actual = historyRows[i];
+            if (actual.dateIso && actual.dateIso < cutoff) continue;
+            const priorHistory = historyRows.slice(i + 1, i + 1 + summaryHistoryWindow);
+            if (priorHistory.length < 20) continue;
+            let picks = currentTop2.slice();
+            if (
+              typeof window.computeFrequency === 'function' &&
+              typeof window.buildTransitions === 'function' &&
+              typeof window.buildAdvancedSignals === 'function' &&
+              typeof window.buildStructureSignals === 'function'
+            ) {
+              const priorStats = window.computeFrequency(priorHistory, game.range);
+              const priorTransitions = window.buildTransitions(priorHistory, game.range);
+              const priorAdvanced = window.buildAdvancedSignals(priorHistory, game, priorTransitions);
+              const priorStructure = window.buildStructureSignals(priorHistory, game);
+              const priorTop2 = buildStandaloneTop2({
+                game,
+                stats: priorStats,
+                sourceHistory: priorHistory,
+                sourceTransitions: priorTransitions,
+                sourceAdvanced: priorAdvanced,
+                sourceStructure: priorStructure,
+                targetDate: actual.date,
+                currentSeed: baseSeed + i * 131,
+                lockedNums: [],
+                strategyWeights
+              });
+              picks = priorTop2.map((row) => row.n).filter((value) => Number.isFinite(value)).slice(0, 2);
+            }
+            const hits = picks.reduce((sum, value) => sum + (actual.draw.includes(value) ? 1 : 0), 0);
+            const matched = picks.filter((value) => actual.draw.includes(value));
+            eligible.push({
+              dateLabel: actual.dateLabel,
+              periodLabel: actual.periodLabel,
+              picks: picks.slice(),
+              draw: actual.draw.slice(),
+              hits,
+              matched
+            });
+          }
           const samples = eligible.length;
           const hitAny = eligible.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
           const hitBoth = eligible.reduce((sum, row) => sum + (row.hits >= 2 ? 1 : 0), 0);
           const totalHits = eligible.reduce((sum, row) => sum + row.hits, 0);
-          const perNumber = picks.map((n) => {
-            const hits = eligible.reduce((sum, row) => sum + (row.draw.includes(n) ? 1 : 0), 0);
+          const perNumberMap = {};
+          eligible.forEach((row) => {
+            (row.picks || []).forEach((n) => {
+              if (!perNumberMap[n]) perNumberMap[n] = { n, hits: 0, samples: 0, hitRate: 0 };
+              perNumberMap[n].samples += 1;
+              if ((row.draw || []).includes(n)) perNumberMap[n].hits += 1;
+            });
+          });
+          const perNumber = Object.values(perNumberMap)
+            .map((row) => Object.assign({}, row, { hitRate: row.samples ? row.hits / row.samples : 0 }))
+            .sort((a, b) => b.hitRate - a.hitRate || b.hits - a.hits || a.n - b.n);
+          const currentTop2History = eligible
+            .map((row) => {
+              const hits = currentTop2.reduce((sum, value) => sum + ((row.draw || []).includes(value) ? 1 : 0), 0);
+              return Object.assign({}, row, {
+                picks: currentTop2.slice(),
+                hits,
+                matched: currentTop2.filter((value) => (row.draw || []).includes(value))
+              });
+            })
+            .slice(0, 10);
+          const currentTop2PerNumber = currentTop2.map((n) => {
+            const hits = currentTop2History.reduce((sum, row) => sum + (((row.draw || []).includes(n)) ? 1 : 0), 0);
             return {
               n,
               hits,
-              samples,
-              hitRate: samples ? hits / samples : 0
+              samples: currentTop2History.length,
+              hitRate: currentTop2History.length ? hits / currentTop2History.length : 0
             };
           });
+          const currentTop2HitAny = currentTop2History.reduce((sum, row) => sum + (row.hits >= 1 ? 1 : 0), 0);
+          const currentTop2HitBoth = currentTop2History.reduce((sum, row) => sum + (row.hits >= 2 ? 1 : 0), 0);
           return {
-            summaryTop2: picks,
+            summaryTop2: currentTop2,
             summaryHitStats: {
               cutoffLabel: formatCutoffLabel(cutoff),
               samples,
               hitRate: samples ? hitAny / samples : 0,
               bothRate: samples ? hitBoth / samples : 0,
               avgHits: samples ? totalHits / samples : 0,
-              currentTop2Values: picks.slice(),
-              currentTop2History: eligible.slice(0, 10),
-              currentTop2HitRate: samples ? hitAny / samples : 0,
-              currentTop2BothRate: samples ? hitBoth / samples : 0,
-              currentTop2PerNumber: perNumber,
+              currentTop2Values: currentTop2.slice(),
+              currentTop2History,
+              currentTop2HitRate: currentTop2History.length ? currentTop2HitAny / currentTop2History.length : 0,
+              currentTop2BothRate: currentTop2History.length ? currentTop2HitBoth / currentTop2History.length : 0,
+              currentTop2PerNumber,
               recent: eligible.slice(0, 10),
               perNumber,
               phase: 'ready',
@@ -989,6 +1179,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
           };
         }
+        window.__lottoCollectHistoryRows = collectHistoryRows;
         window.__lottoBuildStandaloneSummaryStats = buildStandaloneStats;
         window.__lottoReadTop2FromCard = readTop2FromCard;
 
