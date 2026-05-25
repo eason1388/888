@@ -1929,42 +1929,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     '</div>';
   }
 
-  function buildCurrentTop2Html(stats) {
-    const historyRows = Array.isArray(stats.recent) && stats.recent.length
-      ? stats.recent.slice(0, 10)
-      : (Array.isArray(stats.currentTop2History) ? stats.currentTop2History.slice(0, 10) : []);
-    const perNumber = Array.isArray(stats.perNumber) && stats.perNumber.length
-      ? stats.perNumber.slice(0, 8)
-      : (Array.isArray(stats.currentTop2PerNumber) ? stats.currentTop2PerNumber.slice(0, 8) : []);
-    if (!historyRows.length) {
-      return '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">目前日期範圍內還沒有可顯示的歷史預測 2 碼資料。</div>';
-    }
-    const cardsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">' +
-      perNumber.map((row) =>
-        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
-            '<span class="markov-pill hot" style="min-width:28px;">' + String(row.n).padStart(2, '0') + '</span>' +
-            '<div style="font:700 14px var(--mono);color:var(--gold);">' + pct(row.hitRate || 0) + '</div>' +
-          '</div>' +
-          '<div style="margin-top:6px;font:10px var(--mono);color:var(--fg-3);">命中 ' + (row.hits || 0) + ' / ' + (row.samples || 0) + '</div>' +
-        '</div>'
-      ).join('') +
-    '</div>';
-    const rowsHtml = historyRows.length
-      ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">' +
-          historyRows.map((row, idx) =>
-            '<div style="display:grid;grid-template-columns:72px 64px minmax(0,1fr) 72px;gap:8px;align-items:center;padding:8px 0;' + (idx ? 'border-top:1px solid var(--line);' : '') + 'font-size:10px;">' +
-              '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.dateLabel || '') + '</div>' +
-              '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.periodLabel || '') + '</div>' +
-              '<div style="font-size:10px;color:var(--fg-2);line-height:1.5;"><div>預測 ' + (((row.picks || []).map((n) => String(n).padStart(2, '0')).join(' ')) || '--') + '</div><div>實開 ' + ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div><div>命中 ' + ((((row.matched || []).length ? row.matched : []).map((n) => String(n).padStart(2, '0')).join(' ')) || '未中') + '</div></div>' +
-              '<div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';text-align:right;">' + (row.hits || 0) + '/2</div>' +
-            '</div>'
-          ).join('') +
-        '</div>'
-      : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;margin-top:10px;">目前日期範圍內沒有可顯示的歷史預測紀錄。</div>';
-    return cardsHtml + rowsHtml;
-  }
-
   function renderSummaryHotfix() {
     const bridge = window.__lottoSummaryBridge;
     const body = findSummaryBody();
@@ -2022,39 +1986,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     else if (phase === 'ready') statusText = '已完成 ' + (stats.total || 0) + ' 期回測';
 
     mount.innerHTML =
-      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;">' +
         '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">回測起始日</div>' +
         '<input data-summary-start type="date" value="' + dateValue + '" style="background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:12px var(--mono);" />' +
         '<button data-summary-run type="button" ' + (!bridge ? 'disabled ' : '') + 'style="border:1px solid var(--line);background:var(--gold);color:#151515;border-radius:8px;padding:8px 12px;font:700 12px var(--mono);cursor:' + (!bridge ? 'not-allowed' : 'pointer') + ';opacity:' + (!bridge ? '0.6' : '1') + ';">' + (phase === 'running' ? '回測中' : '開始回測') + '</button>' +
       '</div>' +
-      '<div style="margin-top:8px;font-size:10px;color:var(--fg-3);">' + statusText + '</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(96px, 1fr));gap:8px;margin-top:12px;">' +
-        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">2碼全中率</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--cyan);">' + pct(stats.bothRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 兩碼全中</div></div>' +
-        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">至少中1碼</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--gold);">' + pct(stats.hitRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 命中至少 1 碼</div></div>' +
-        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">平均命中</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + ((stats.avgHits || 0).toFixed(2)) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">平均 / 2 碼</div></div>' +
-        '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">樣本</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + (stats.samples || 0) + ' 期</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">自 ' + (stats.cutoffLabel || dateValue) + ' 起</div></div>' +
+      '<div style="margin-top:6px;font-size:10px;color:var(--fg-3);">' + statusText + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(92px, 1fr));gap:8px;margin-top:10px;">' +
+        '<div style="padding:9px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">2碼全中率</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--cyan);">' + pct(stats.bothRate) + '</div><div style="margin-top:3px;font-size:10px;color:var(--fg-3);">Top 2 兩碼全中</div></div>' +
+        '<div style="padding:9px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">至少中1碼</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--gold);">' + pct(stats.hitRate) + '</div><div style="margin-top:3px;font-size:10px;color:var(--fg-3);">Top 2 命中至少 1 碼</div></div>' +
+        '<div style="padding:9px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">平均命中</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + ((stats.avgHits || 0).toFixed(2)) + '</div><div style="margin-top:3px;font-size:10px;color:var(--fg-3);">平均 / 2 碼</div></div>' +
+        '<div style="padding:9px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">樣本</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + (stats.samples || 0) + ' 期</div><div style="margin-top:3px;font-size:10px;color:var(--fg-3);">自 ' + (stats.cutoffLabel || dateValue) + ' 起</div></div>' +
       '</div>' +
-      '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
-          '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">歷史每期預測 2 碼摘要</div>' +
-          '<div style="font-size:10px;color:var(--fg-3);">這裡顯示每一期當時實際預測的 2 碼，不再固定拿目前 Top 2 去套全部歷史</div>' +
-        '</div>' +
-        buildCurrentTop2Html({
-          recent,
-          perNumber: stats.perNumber || [],
-          currentTop2Values: effectiveCurrentTop2Values,
-          currentTop2PerNumber: effectiveCurrentTop2PerNumber,
-          currentTop2History: effectiveCurrentTop2History
-        }) +
-      '</div>' +
-      '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
+      '<div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
           '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近 10 期回測明細</div>' +
           '<div style="font-size:10px;color:var(--fg-3);">直接顯示每期預測 2 碼、實際命中號碼與 0/2、1/2、2/2</div>' +
         '</div>' +
         buildRecentHtml(recent) +
       '</div>' +
-      '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
+      '<div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
           '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">2碼歷史命中率</div>' +
           '<div style="font-size:10px;color:var(--fg-3);">統計回測期間內，每個被預測號碼各自的命中率</div>' +
