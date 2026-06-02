@@ -1,6 +1,6 @@
 {
   "source": "https://lottery.timetable.tw/jin-cai-539?limit=50&sortOrder=DESC",
-  "updatedAt": "2026-06-01T18:28:23.435Z",
+  "updatedAt": "2026-06-02T17:08:17.878Z",
   "rows": [
     [
       2026,
@@ -188,6 +188,17 @@
       20,
       28,
       "115133"
+    ],
+    [
+      2026,
+      6,
+      2,
+      7,
+      12,
+      22,
+      26,
+      30,
+      "115134"
     ]
   ]
 }
