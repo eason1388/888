@@ -1469,6 +1469,10 @@ const summaryHitStats = useMemo(() => {
             const dateLabel = (row.querySelector('.draw-meta b')?.textContent || '').trim();
             const periodText = (row.querySelector('.draw-meta span')?.textContent || '').trim();
             const lookup = map[periodText] || map[dateLabel] || { matched: [] };
+            const picks = Array.isArray(lookup.picks) ? lookup.picks.filter((value) => Number.isFinite(Number(value))).map((value) => Number(value)).slice(0, 2) : [];
+            const drawValues = Array.from(row.querySelectorAll('.dn'))
+              .map((node) => Number((node.textContent || '').trim()))
+              .filter((value) => Number.isFinite(value));
             const matchedSet = new Set((lookup.matched || []).map((value) => String(Number(value))));
             Array.from(row.querySelectorAll('.dn')).forEach((node) => {
               const value = String(Number((node.textContent || '').trim()));
@@ -1480,14 +1484,24 @@ const summaryHitStats = useMemo(() => {
               noteNode = document.createElement('div');
               noteNode.className = 'draw-picks-note';
               noteNode.style.width = '100%';
+              noteNode.style.display = 'grid';
+              noteNode.style.gap = '4px';
               noteNode.style.fontSize = '10px';
+              noteNode.style.lineHeight = '1.55';
               noteNode.style.color = 'var(--fg-3)';
               noteNode.style.fontFamily = 'var(--mono)';
-              noteNode.style.marginTop = '6px';
+              noteNode.style.marginTop = '8px';
+              noteNode.style.paddingTop = '6px';
+              noteNode.style.borderTop = '1px solid var(--line)';
               row.appendChild(noteNode);
             }
-            const picksText = (lookup.picks || []).map((value) => String(value).padStart(2, '0')).join(' ');
-            noteNode.textContent = picksText ? '預測 2 碼 ' + picksText : '預測 2 碼 -- --';
+            const picksText = picks.map((value) => String(value).padStart(2, '0')).join(' ');
+            const drawText = drawValues.map((value) => String(value).padStart(2, '0')).join(' ');
+            const matchedText = Array.from(matchedSet).map((value) => String(Number(value)).padStart(2, '0')).join(' ');
+            noteNode.innerHTML =
+              '<div><span style="color:var(--fg-3)">預測 2 碼:</span> <span style="color:var(--gold);font-weight:700;">' + (picksText || '-- --') + '</span></div>' +
+              '<div><span style="color:var(--fg-3)">開獎 5 碼:</span> <span style="color:var(--fg)">' + (drawText || '-- -- -- -- --') + '</span></div>' +
+              '<div><span style="color:var(--fg-3)">命中比對:</span> <span style="color:' + (matchedText ? 'var(--green)' : 'var(--fg-3)') + ';font-weight:700;">' + (matchedText || '未中') + '</span></div>';
           });
         }
         window.__lottoCollectHistoryRows = collectHistoryRows;
