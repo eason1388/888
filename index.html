@@ -40,10 +40,15 @@
     
 document.addEventListener('DOMContentLoaded', async function() {
   const loading = document.getElementById('__bundler_loading');
+  const latestSyncIntervalMs = 60000;
   function setStatus(msg) { if (loading) loading.textContent = msg; }
+  function resolveLatest539Url() {
+    const isLocalPreview = /^(127\.0\.0\.1|localhost)$/i.test(location.hostname || '');
+    return isLocalPreview ? '/__latest539' : ('./data/d539-latest.json?v=' + Date.now());
+  }
   async function syncLatest539() {
     try {
-      const res = await fetch('./data/d539-latest.json?v=' + Date.now(), { cache: 'no-store' });
+      const res = await fetch(resolveLatest539Url(), { cache: 'no-store' });
       if (!res.ok) return;
       const payload = await res.json();
       if (!payload || !Array.isArray(payload.rows)) return;
@@ -67,7 +72,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
         changed = true;
       });
-      if (changed) localStorage.setItem(key, JSON.stringify(existing));
+      if (changed) {
+        localStorage.setItem(key, JSON.stringify(existing));
+        window.dispatchEvent(new CustomEvent('lotto-data-synced', { detail: { rows: payload.rows.length, updatedAt: payload.updatedAt || null } }));
+        if (!window.__lottoAutoReloadedAfterSync) {
+          window.__lottoAutoReloadedAfterSync = true;
+          setTimeout(() => window.location.reload(), 250);
+        }
+      }
     } catch {}
   }
 
@@ -83,7 +95,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   }, true);
 
   try {
-    await syncLatest539();
+    syncLatest539();
+    setInterval(() => { syncLatest539(); }, latestSyncIntervalMs);
     const manifestEl = document.querySelector('script[type="__bundler/manifest"]');
     const templateEl = document.querySelector('script[type="__bundler/template"]');
     if (!manifestEl || !templateEl) {
