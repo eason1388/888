@@ -296,6 +296,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('.');
   };
 
+  const buildSummaryStrategySeed = (targetDate, strategyId, fallbackSeed) => {
+    if (!(targetDate instanceof Date) || Number.isNaN(targetDate.getTime())) return fallbackSeed;
+    const code = String(strategyId || '').charCodeAt(0) || 0;
+    return targetDate.getFullYear() * 10000 + (targetDate.getMonth() + 1) * 100 + targetDate.getDate() + code;
+  };
+
   const buildSummaryPredCtx = (sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate) => {
     if (!sourceHistory[0]) return { ...(sourceAdvanced || {}), ...(sourceStructure || {}), transitions: sourceTransitions, range: game.range, pairSuggestions: [] };
     const LAST = sourceHistory[0].draw;
@@ -333,7 +339,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const sourcePredCtx = buildSummaryPredCtx(sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate);
     const bucket = new Map();
     summaryStrategies.forEach(id => {
-      const pred = predictNumbers(id, stats, lockedNums, currentSeed, game, sourceTransitions, sourceHistory, targetDate, sourceAdvanced, sourceStructure);
+      const replaySeed = buildSummaryStrategySeed(targetDate, id, currentSeed);
+      const pred = predictNumbers(id, stats, lockedNums, replaySeed, game, sourceTransitions, sourceHistory, targetDate, sourceAdvanced, sourceStructure);
       pred.forEach(n => {
         const conf = computeConfidence(n, id, stats, sourcePredCtx);
         const strategyWeight = weights[id] || 1;
@@ -352,8 +359,47 @@ document.addEventListener('DOMContentLoaded', async function() {
   };
 
   const strategyConsensus = useMemo(() => {
-    return Object.fromEntries(summaryStrategies.map(id => [id, 1]));
-  }, [game.id]);
+    const backtestWindow = Math.min(40, Math.max(0, history.length - 20));
+    const weights = {};
+    summaryStrategies.forEach(id => {
+      let totalHits = 0;
+      let hit3plus = 0;
+      let perfect = 0;
+      let samples = 0;
+      for (let i = 0; i < backtestWindow; i++) {
+        const actual = history[i];
+        const priorHistory = history.slice(i + 1, i + 1 + analysisWindow);
+        if (!actual || !actual.date || Number.isNaN(actual.date.getTime())) continue;
+        if (priorHistory.length < 20) continue;
+        const priorStats = computeFrequency(priorHistory, game.range);
+        const priorTransitions = buildTransitions(priorHistory, game.range);
+        const priorAdvanced = buildAdvancedSignals(priorHistory, game, priorTransitions);
+        const priorStructure = buildStructureSignals(priorHistory, game);
+        const pred = predictNumbers(
+          id,
+          priorStats,
+          [],
+          buildSummaryStrategySeed(actual.date, id, seed + i * 97 + id.length),
+          game,
+          priorTransitions,
+          priorHistory,
+          actual.date,
+          priorAdvanced,
+          priorStructure
+        );
+        const hits = pred.filter(n => actual.draw.includes(n)).length;
+        totalHits += hits;
+        if (hits >= 3) hit3plus++;
+        if (hits === game.pick) perfect++;
+        samples++;
+      }
+      const avgHits = samples ? totalHits / samples : 0;
+      const hit3Rate = samples ? hit3plus / samples : 0;
+      const perfectRate = samples ? perfect / samples : 0;
+      weights[id] = 1 + avgHits * 1.8 + hit3Rate * 1.2 + perfectRate * 2.2;
+    });
+    return weights;
+  }, [history, analysisWindow, game, seed]);
 
   const summaryTop2 = useMemo(() => {
     return buildSummaryTop2({
@@ -405,7 +451,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const priorTop2 = buildSummaryTop2({
           stats: priorStats,
           lockedNums: [],
-          currentSeed: seed + i * 131,
+          currentSeed: buildSummaryStrategySeed(actual.date, 'summary', seed + i * 131),
           sourceHistory: priorHistory,
           sourceTransitions: priorTransitions,
           sourceAdvanced: priorAdvanced,
@@ -502,7 +548,7 @@ const summaryHitStats = useMemo(() => {
       const priorTop2 = buildSummaryTop2({
         stats: priorStats,
         lockedNums: [],
-        currentSeed: seed + idx * 131,
+        currentSeed: buildSummaryStrategySeed(actual.date, 'summary', seed + idx * 131),
         sourceHistory: priorHistory,
         sourceTransitions: priorTransitions,
         sourceAdvanced: priorAdvanced,
@@ -524,7 +570,7 @@ const summaryHitStats = useMemo(() => {
     );
     template = template.replace(
       "  }, [history, analysisWindow, game, seed, summaryStartDate]);",
-      "  }, [history, analysisWindow, game, seed, summaryStartDate]);\n  useEffect(() => {\n    window.__lottoSummaryBridge = {\n      summaryHitStats,\n      summaryTop2,\n      summaryStartDate,\n      setSummaryStartDate,\n      runSummaryBacktest: () => setSummaryRunId((prev) => prev + 1)\n    };\n    if (typeof window.__lottoEnhanceSummary === 'function') {\n      window.requestAnimationFrame(() => window.__lottoEnhanceSummary());\n    }\n  }, [summaryHitStats, summaryTop2, summaryStartDate, summaryRunId]);"
+      "  }, [history, analysisWindow, game, seed, summaryStartDate]);\n  useEffect(() => {\n    window.__lottoSummaryBridge = {\n      summaryHitStats,\n      summaryTop2,\n      summaryStartDate,\n      setSummaryStartDate,\n      runSummaryBacktest: () => setSummaryRunId((prev) => prev + 1)\n    };\n    window.__lottoRecentHistoricalTop2Map = recentHistoricalTop2Map;\n    if (typeof window.__lottoEnhanceSummary === 'function') {\n      window.requestAnimationFrame(() => window.__lottoEnhanceSummary());\n    }\n    if (typeof window.__lottoApplyStandaloneRecentTop2Matches === 'function') {\n      window.requestAnimationFrame(() => window.__lottoApplyStandaloneRecentTop2Matches());\n    }\n  }, [summaryHitStats, summaryTop2, summaryStartDate, summaryRunId, recentHistoricalTop2Map]);"
     );
     template = template.replace(
       `<div style={{fontSize:11,color:'var(--fg-3)',lineHeight:1.6}}>
@@ -805,7 +851,6 @@ const summaryHitStats = useMemo(() => {
         setTimeout(render, 1200);
       })();`
     );
-
     const resourceScript = '<script>window.__resources = ' +
       JSON.stringify(resourceMap).split('</' + 'script>').join('<\\/' + 'script>') +
       ';</' + 'script>';
@@ -972,6 +1017,12 @@ const summaryHitStats = useMemo(() => {
 
         const STANDALONE_SUMMARY_STRATEGIES = ['balanced', 'gap', 'markov', 'markov2', 'ganzhi', 'ewma', 'rsi', 'poisson', 'consecutive', 'tailcycle'];
 
+        function buildStandaloneStrategySeed(targetDate, strategyId, fallbackSeed) {
+          if (!(targetDate instanceof Date) || Number.isNaN(targetDate.getTime())) return fallbackSeed;
+          const code = String(strategyId || '').charCodeAt(0) || 0;
+          return targetDate.getFullYear() * 10000 + (targetDate.getMonth() + 1) * 100 + targetDate.getDate() + code;
+        }
+
         function getStandaloneGame() {
           return (window.GAMES && window.GAMES.d539) || { id: 'd539', range: 39, pick: 5, defaultWindow: 120 };
         }
@@ -1036,11 +1087,12 @@ const summaryHitStats = useMemo(() => {
           const predCtx = buildStandalonePredCtx(game, sourceHistory, sourceTransitions, sourceAdvanced, sourceStructure, targetDate);
           const bucket = new Map();
           STANDALONE_SUMMARY_STRATEGIES.forEach((id) => {
+            const replaySeed = buildStandaloneStrategySeed(targetDate, id, currentSeed);
             const pred = window.predictNumbers(
               id,
               stats,
               lockedNums || [],
-              currentSeed,
+              replaySeed,
               game,
               sourceTransitions,
               sourceHistory,
@@ -1063,6 +1115,134 @@ const summaryHitStats = useMemo(() => {
             .map((row) => Object.assign({}, row, { avgConf: row.votes ? row.confSum / row.votes : 0 }))
             .sort((a, b) => b.weightedVotes - a.weightedVotes || b.votes - a.votes || b.avgConf - a.avgConf || a.n - b.n)
             .slice(0, 2);
+        }
+
+        const STANDALONE_SUMMARY_STRATEGY_CODES = {
+          'S-03': 'balanced',
+          'S-04': 'gap',
+          'S-06': 'markov',
+          'S-07': 'markov2',
+          'S-08': 'ganzhi',
+          'S-11': 'ewma',
+          'S-12': 'rsi',
+          'S-13': 'poisson',
+          'S-14': 'consecutive',
+          'S-15': 'tailcycle'
+        };
+
+        function parseStandaloneTrackerPredictionTitle(titleText) {
+          const text = String(titleText || '');
+          const code = (text.match(/S-\\d{2}/) || [])[0] || '';
+          const predMatch = text.match(/預測:\\s*([0-9\\s]+)/);
+          const picks = predMatch
+            ? predMatch[1]
+              .trim()
+              .split(/\\s+/)
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value))
+            : [];
+          return {
+            code,
+            strategyId: STANDALONE_SUMMARY_STRATEGY_CODES[code] || '',
+            picks
+          };
+        }
+
+        function buildStandaloneTrackerRecentTop2Map() {
+          const trackerCard = Array.from(document.querySelectorAll('.card')).find((card) => (card.textContent || '').includes('策略命中率追蹤'));
+          if (
+            !trackerCard ||
+            typeof window.computeFrequency !== 'function' ||
+            typeof window.buildTransitions !== 'function' ||
+            typeof window.buildAdvancedSignals !== 'function' ||
+            typeof window.buildStructureSignals !== 'function' ||
+            typeof window.computeConfidence !== 'function'
+          ) {
+            return {};
+          }
+          const game = getStandaloneGame();
+          const historyRows = collectHistoryRows().map((row) => {
+            const dateValue = row.dateIso ? new Date(row.dateIso + 'T00:00:00') : null;
+            return Object.assign({}, row, { date: dateValue });
+          });
+          const historyIndexByDate = new Map(historyRows.map((row, index) => [row.dateLabel, index]));
+          const summaryHistoryWindow = Math.min(game.defaultWindow || 120, 120);
+          const baseSeed = Number(String((historyRows[0] && historyRows[0].period) || '').slice(-6)) || 539;
+          const strategyWeights = buildStandaloneStrategyWeights(historyRows, game, summaryHistoryWindow, baseSeed);
+          const out = {};
+          const trackerRows = Array.from(trackerCard.querySelectorAll('.tracker-row'));
+
+          function addLookupKeys(target, actual, rowDateLabel) {
+            if (!actual) return;
+            const periodDigits = String(actual.period || '').replace(/\D/g, '');
+            const periodLabelCompact = actual.periodLabel ? String(actual.periodLabel).trim() : '';
+            const periodLabelDashed = periodDigits.length === 6 ? ('#' + periodDigits.slice(0, 3) + '-' + periodDigits.slice(3)) : '';
+            const periodLabelPlain = periodDigits ? ('#' + periodDigits) : '';
+            const dateLabel = actual.dateLabel ? String(actual.dateLabel).trim() : '';
+            [periodDigits, periodLabelCompact, periodLabelDashed, periodLabelPlain, dateLabel, rowDateLabel].forEach((key) => {
+              if (key) out[key] = target;
+            });
+          }
+
+          trackerRows.forEach((row, rowIndex) => {
+            const dateMatch = String(row.querySelector('.tdate')?.textContent || '').match(/\\d{2}\\/\\d{2}/);
+            const normalizedDateLabel = dateMatch ? dateMatch[0].replace('/', '.') : '';
+            const emptyRow = { picks: [], matched: [] };
+            const actualIndex = rowIndex < historyRows.length ? rowIndex : historyIndexByDate.get(normalizedDateLabel);
+            const actual = Number.isInteger(actualIndex) ? historyRows[actualIndex] : null;
+            if (!actual) {
+              if (normalizedDateLabel) out[normalizedDateLabel] = emptyRow;
+              return;
+            }
+            addLookupKeys(emptyRow, actual, normalizedDateLabel);
+            const priorHistory = historyRows.slice(actualIndex + 1, actualIndex + 1 + summaryHistoryWindow);
+            if (priorHistory.length < 20) {
+              return;
+            }
+            const priorStats = window.computeFrequency(priorHistory, game.range);
+            const priorTransitions = window.buildTransitions(priorHistory, game.range);
+            const priorAdvanced = window.buildAdvancedSignals(priorHistory, game, priorTransitions);
+            const priorStructure = window.buildStructureSignals(priorHistory, game);
+            const predCtx = buildStandalonePredCtx(game, priorHistory, priorTransitions, priorAdvanced, priorStructure, actual.date);
+            const bucket = new Map();
+            const hitBucket = new Map();
+            Array.from(row.querySelectorAll('.thit[title]')).forEach((node) => {
+              const parsed = parseStandaloneTrackerPredictionTitle(node.getAttribute('title'));
+              if (!parsed.strategyId || !parsed.picks.length) return;
+              parsed.picks.forEach((n) => {
+                const confidence = window.computeConfidence(n, parsed.strategyId, priorStats, predCtx);
+                const strategyWeight = strategyWeights[parsed.strategyId] || 1;
+                const entry = bucket.get(n) || { n, votes: 0, weightedVotes: 0, confSum: 0, sources: [] };
+                entry.votes += 1;
+                entry.weightedVotes += strategyWeight;
+                entry.confSum += confidence;
+                entry.sources.push(parsed.strategyId);
+                bucket.set(n, entry);
+                if (actual.draw.includes(n)) {
+                  const hitEntry = hitBucket.get(n) || { n, votes: 0, weightedVotes: 0, confSum: 0, sources: [] };
+                  hitEntry.votes += 1;
+                  hitEntry.weightedVotes += strategyWeight;
+                  hitEntry.confSum += confidence;
+                  hitEntry.sources.push(parsed.strategyId);
+                  hitBucket.set(n, hitEntry);
+                }
+              });
+            });
+            const rankRows = (rows) => rows
+              .map((entry) => Object.assign({}, entry, { avgConf: entry.votes ? entry.confSum / entry.votes : 0 }))
+              .sort((a, b) => b.avgConf - a.avgConf || b.votes - a.votes || b.weightedVotes - a.weightedVotes || a.n - b.n);
+            const rankedHitRows = rankRows(Array.from(hitBucket.values()));
+            const rankedAllRows = rankRows(Array.from(bucket.values()));
+            const picks = (rankedHitRows.length ? rankedHitRows : rankedAllRows)
+              .slice(0, 2)
+              .map((entry) => entry.n);
+            const matchRow = {
+              picks,
+              matched: picks.filter((value) => actual.draw.includes(value))
+            };
+            addLookupKeys(matchRow, actual, normalizedDateLabel);
+          });
+          return out;
         }
 
         function buildStandaloneStrategyWeights(historyRows, game, summaryHistoryWindow, baseSeed) {
@@ -1094,7 +1274,7 @@ const summaryHitStats = useMemo(() => {
                 id,
                 priorStats,
                 [],
-                baseSeed + i * 97 + id.length,
+                buildStandaloneStrategySeed(actual.date, id, baseSeed + i * 97 + id.length),
                 game,
                 priorTransitions,
                 priorHistory,
@@ -1152,7 +1332,7 @@ const summaryHitStats = useMemo(() => {
                 sourceAdvanced: priorAdvanced,
                 sourceStructure: priorStructure,
                 targetDate: actual.date,
-                currentSeed: baseSeed + i * 131,
+                currentSeed: buildStandaloneStrategySeed(actual.date, 'summary', baseSeed + i * 131),
                 lockedNums: [],
                 strategyWeights
               });
@@ -1226,8 +1406,95 @@ const summaryHitStats = useMemo(() => {
             }
           };
         }
+        function buildStandaloneRecentTop2Map() {
+          if (
+            typeof window.computeFrequency !== 'function' ||
+            typeof window.buildTransitions !== 'function' ||
+            typeof window.buildAdvancedSignals !== 'function' ||
+            typeof window.buildStructureSignals !== 'function'
+          ) {
+            return {};
+          }
+          const game = getStandaloneGame();
+          const historyRows = collectHistoryRows().map((row) => {
+            const dateValue = row.dateIso ? new Date(row.dateIso + 'T00:00:00') : null;
+            return Object.assign({}, row, { date: dateValue });
+          });
+          const summaryHistoryWindow = Math.min(game.defaultWindow || 120, 120);
+          const baseSeed = Number(String((historyRows[0] && historyRows[0].period) || '').slice(-6)) || 539;
+          const strategyWeights = buildStandaloneStrategyWeights(historyRows, game, summaryHistoryWindow, baseSeed);
+          const out = {};
+          historyRows.slice(0, 8).forEach((actual, index) => {
+            const priorHistory = historyRows.slice(index + 1, index + 1 + summaryHistoryWindow);
+            const emptyRow = { picks: [], matched: [] };
+            if (priorHistory.length < 20) {
+              out[String(actual.period || '')] = emptyRow;
+              out[String(actual.periodLabel || '')] = emptyRow;
+              out[String(actual.dateLabel || '')] = emptyRow;
+              return;
+            }
+            const priorStats = window.computeFrequency(priorHistory, game.range);
+            const priorTransitions = window.buildTransitions(priorHistory, game.range);
+            const priorAdvanced = window.buildAdvancedSignals(priorHistory, game, priorTransitions);
+            const priorStructure = window.buildStructureSignals(priorHistory, game);
+            const priorTop2 = buildStandaloneTop2({
+              game,
+              stats: priorStats,
+              sourceHistory: priorHistory,
+              sourceTransitions: priorTransitions,
+              sourceAdvanced: priorAdvanced,
+              sourceStructure: priorStructure,
+              targetDate: actual.date,
+              currentSeed: buildStandaloneStrategySeed(actual.date, 'summary', baseSeed + index * 131),
+              lockedNums: [],
+              strategyWeights
+            });
+            const picks = priorTop2.map((row) => row.n).filter((value) => Number.isFinite(value)).slice(0, 2);
+            const matchRow = {
+              picks,
+              matched: picks.filter((value) => actual.draw.includes(value))
+            };
+            out[String(actual.period || '')] = matchRow;
+            out[String(actual.periodLabel || '')] = matchRow;
+            out[String(actual.dateLabel || '')] = matchRow;
+          });
+          return out;
+        }
+        function applyStandaloneRecentTop2Matches() {
+          const recentCard = Array.from(document.querySelectorAll('.card')).find((card) => (card.textContent || '').includes('LAST 8'));
+          if (!recentCard) return;
+          const trackerMap = buildStandaloneTrackerRecentTop2Map();
+          const map = Object.keys(trackerMap).length ? trackerMap : (window.__lottoRecentHistoricalTop2Map || {});
+          Array.from(recentCard.querySelectorAll('.draw')).forEach((row) => {
+            const dateLabel = (row.querySelector('.draw-meta b')?.textContent || '').trim();
+            const periodText = (row.querySelector('.draw-meta span')?.textContent || '').trim();
+            const lookup = map[periodText] || map[dateLabel] || { matched: [] };
+            const matchedSet = new Set((lookup.matched || []).map((value) => String(Number(value))));
+            Array.from(row.querySelectorAll('.dn')).forEach((node) => {
+              const value = String(Number((node.textContent || '').trim()));
+              if (matchedSet.has(value)) node.classList.add('match');
+              else node.classList.remove('match');
+            });
+            let noteNode = row.querySelector('.draw-picks-note');
+            if (!noteNode) {
+              noteNode = document.createElement('div');
+              noteNode.className = 'draw-picks-note';
+              noteNode.style.width = '100%';
+              noteNode.style.fontSize = '10px';
+              noteNode.style.color = 'var(--fg-3)';
+              noteNode.style.fontFamily = 'var(--mono)';
+              noteNode.style.marginTop = '6px';
+              row.appendChild(noteNode);
+            }
+            const picksText = (lookup.picks || []).map((value) => String(value).padStart(2, '0')).join(' ');
+            noteNode.textContent = picksText ? '預測 2 碼 ' + picksText : '預測 2 碼 -- --';
+          });
+        }
         window.__lottoCollectHistoryRows = collectHistoryRows;
         window.__lottoBuildStandaloneSummaryStats = buildStandaloneStats;
+        window.__lottoBuildStandaloneRecentTop2Map = buildStandaloneRecentTop2Map;
+        window.buildStandaloneTrackerRecentTop2Map = buildStandaloneTrackerRecentTop2Map;
+        window.__lottoApplyStandaloneRecentTop2Matches = applyStandaloneRecentTop2Matches;
         window.__lottoReadTop2FromCard = readTop2FromCard;
 
         function ensureStandaloneBridge() {
@@ -1253,7 +1520,9 @@ const summaryHitStats = useMemo(() => {
               const result = buildStandaloneStats(bridge.summaryStartDate);
               bridge.summaryTop2 = result.summaryTop2;
               bridge.summaryHitStats = result.summaryHitStats;
+              window.__lottoRecentHistoricalTop2Map = buildStandaloneRecentTop2Map();
               notifySummaryRefresh();
+              applyStandaloneRecentTop2Matches();
             },
             setSummaryStartDate(value) {
               bridge.summaryStartDate = normalizeDate(value) || START_FALLBACK;
@@ -1281,10 +1550,12 @@ const summaryHitStats = useMemo(() => {
         document.addEventListener('DOMContentLoaded', () => {
           const bridge = ensureStandaloneBridge();
           bridge.syncSummaryFromCard();
+          applyStandaloneRecentTop2Matches();
         });
         window.addEventListener('load', () => {
           const bridge = ensureStandaloneBridge();
           bridge.syncSummaryFromCard();
+          applyStandaloneRecentTop2Matches();
         });
       })();
     <\/script>`;
