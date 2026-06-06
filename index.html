@@ -433,7 +433,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     return () => { cancelled = true; };
   }, [summaryRunId, summaryStartDate, history, analysisWindow, game, seed, strategyConsensus]);
 
-  const summaryHitStats = useMemo(() => {
+const summaryHitStats = useMemo(() => {
     const fallbackStart = '2026-05-13';
     const startText = /^\d{4}-\d{2}-\d{2}$/.test(summaryStartDate || '') ? summaryStartDate : fallbackStart;
     const [startYear, startMonth, startDay] = startText.split('-').map(Number);
@@ -484,7 +484,43 @@ document.addEventListener('DOMContentLoaded', async function() {
       progress: summaryHistoryStatus.progress,
       total: summaryHistoryStatus.total
     };
-  }, [summaryHistoryCache, summaryStartDate, summaryHistoryStatus, summaryTop2, history]);`
+  }, [summaryHistoryCache, summaryStartDate, summaryHistoryStatus, summaryTop2, history]);
+
+  const recentHistoricalTop2Map = useMemo(() => {
+    const recentWindow = Math.min(analysisWindow, 120);
+    const out = {};
+    history.slice(0, 8).forEach((actual, idx) => {
+      const priorHistory = history.slice(idx + 1, idx + 1 + recentWindow);
+      if (priorHistory.length < 20) {
+        out[actual.period] = { picks: [], matched: [] };
+        return;
+      }
+      const priorStats = computeFrequency(priorHistory, game.range);
+      const priorTransitions = buildTransitions(priorHistory, game.range);
+      const priorAdvanced = buildAdvancedSignals(priorHistory, game, priorTransitions);
+      const priorStructure = buildStructureSignals(priorHistory, game);
+      const priorTop2 = buildSummaryTop2({
+        stats: priorStats,
+        lockedNums: [],
+        currentSeed: seed + idx * 131,
+        sourceHistory: priorHistory,
+        sourceTransitions: priorTransitions,
+        sourceAdvanced: priorAdvanced,
+        sourceStructure: priorStructure,
+        targetDate: actual.date,
+        weights: strategyConsensus
+      });
+      const picks = priorTop2
+        .map((row) => row && typeof row.n === 'number' ? row.n : Number(row))
+        .filter((value) => Number.isFinite(value))
+        .slice(0, 2);
+      out[actual.period] = {
+        picks,
+        matched: picks.filter((value) => actual.draw.includes(value))
+      };
+    });
+    return out;
+  }, [history, analysisWindow, game, seed, strategyConsensus]);`
     );
     template = template.replace(
       "  }, [history, analysisWindow, game, seed, summaryStartDate]);",
