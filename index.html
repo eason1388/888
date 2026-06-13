@@ -2034,6 +2034,192 @@ const summaryHitStats = useMemo(() => {
         [data-summary-enhanced] .summary-hit-picks,
         [data-summary-enhanced] .summary-hit-draw { min-width: 0 !important; }
       }
+
+      /* ═══ 專業視覺改良 ═══ */
+
+      /* 自訂捲軸 */
+      ::-webkit-scrollbar { width: 5px !important; height: 5px !important; }
+      ::-webkit-scrollbar-track { background: transparent !important; }
+      ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14) !important; border-radius: 999px !important; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.26) !important; }
+
+      /* 互動元素平滑過渡 */
+      .tab, .btn { transition: color 0.13s ease, background 0.13s ease, border-color 0.13s ease, opacity 0.13s ease !important; }
+      .btn:hover:not(:disabled) { filter: brightness(1.12) !important; }
+      .btn:active:not(:disabled) { transform: scale(0.97) !important; }
+
+      /* 策略卡片懸停效果 */
+      .strategy > * {
+        transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+        cursor: pointer !important;
+      }
+      .strategy > *:hover {
+        border-color: rgba(217,164,65,0.55) !important;
+        box-shadow: inset 0 0 0 1px rgba(217,164,65,0.12), 0 2px 12px rgba(0,0,0,0.2) !important;
+      }
+
+      /* 數字球懸停 */
+      .markov-pill { transition: transform 0.1s ease, filter 0.1s ease !important; }
+      .markov-pill:hover { transform: scale(1.12) !important; filter: brightness(1.15) !important; }
+
+      /* 命中號碼高亮 */
+      .dn.match {
+        background: var(--gold) !important;
+        color: #151515 !important;
+        font-weight: 700 !important;
+        border-radius: 50% !important;
+        box-shadow: 0 0 10px rgba(217,164,65,0.45) !important;
+      }
+
+      /* 追蹤列 / 開獎列懸停 */
+      .tracker-row { transition: background 0.1s ease !important; }
+      .tracker-row:hover { background: rgba(255,255,255,0.025) !important; }
+      .draw { transition: background 0.1s ease !important; }
+      .draw:hover { background: rgba(255,255,255,0.025) !important; }
+
+      /* 焦點環 */
+      input:focus-visible, button:focus-visible, select:focus-visible {
+        outline: 1.5px solid var(--gold) !important;
+        outline-offset: 2px !important;
+      }
+
+      /* 卡片懸停陰影 */
+      .card { transition: box-shadow 0.2s ease !important; }
+      .card:hover { box-shadow: 0 4px 28px rgba(0,0,0,0.3) !important; }
+
+      /* 整體淡入動畫 */
+      .app { animation: __lotto_fadein 0.45s ease both !important; }
+      @keyframes __lotto_fadein {
+        from { opacity: 0; transform: translateY(5px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      /* 摘要面板淡入 */
+      [data-summary-hotfix],
+      [data-summary-top2-combined],
+      [data-summary-detail-row] { animation: __lotto_fadein 0.35s ease both !important; }
+
+      /* 標籤頁底線動畫 */
+      .tab.active { position: relative !important; }
+
+      /* 數字卡片浮起效果 */
+      .pred-num { transition: transform 0.12s ease !important; }
+      .pred-num:hover { transform: scale(1.06) !important; }
+
+      /* ═══ 進化 v2 ═══ */
+
+      /* 卡片標題左側金條 */
+      .card-h {
+        border-left: 2px solid rgba(217,164,65,0.45) !important;
+      }
+
+      /* 輸入框 hover 高亮 */
+      input[type="text"]:hover, input[type="number"]:hover,
+      input[type="date"]:hover, select:hover {
+        border-color: rgba(255,255,255,0.25) !important;
+      }
+      input[type="text"], input[type="number"],
+      input[type="date"], select {
+        transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+      }
+
+      /* Hot 數字球微光 */
+      .markov-pill.hot {
+        box-shadow: 0 0 0 1px rgba(217,164,65,0.28), 0 1px 6px rgba(0,0,0,0.3) !important;
+      }
+
+      /* 回測統計小卡 hover */
+      [data-summary-hotfix] [style*="border:1px solid"],
+      [data-summary-detail-row] [style*="border:1px solid"] {
+        transition: border-color 0.15s ease, background 0.15s ease !important;
+      }
+      [data-summary-hotfix] [style*="border:1px solid"]:hover,
+      [data-summary-detail-row] [style*="border:1px solid"]:hover {
+        border-color: rgba(255,255,255,0.2) !important;
+        background: rgba(255,255,255,0.04) !important;
+      }
+
+      /* 手機版 touch target 最小尺寸 */
+      @media (max-width: 900px) {
+        .btn, button { min-height: 38px !important; }
+        select, input[type="date"] { min-height: 38px !important; padding: 8px 10px !important; }
+        .strategy > * { min-height: 52px !important; padding: 12px 10px !important; }
+        .tabs { -webkit-overflow-scrolling: touch !important; }
+      }
+
+      /* 手機版數字球適合觸控 */
+      @media (max-width: 560px) {
+        .card-h > div:first-child { font-size: 13px !important; }
+        .markov-pill { width: 26px !important; height: 26px !important; font-size: 11px !important; }
+        .markov-pill.hot { width: 28px !important; height: 28px !important; font-size: 12px !important; }
+        .ana-bar { flex: 1 !important; min-width: 80px !important; }
+      }
+
+      /* 進度條填充動畫 */
+      @keyframes __lotto_bar_fill {
+        from { max-width: 0% !important; }
+        to   { max-width: var(--bar-pct, 100%) !important; }
+      }
+
+      /* 複製號碼按鈕樣式 */
+      .__lotto_copy_btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 5px !important;
+        padding: 5px 12px !important;
+        border: 1px solid rgba(255,255,255,0.14) !important;
+        border-radius: 7px !important;
+        background: transparent !important;
+        color: rgba(255,255,255,0.55) !important;
+        font: 11px var(--mono) !important;
+        letter-spacing: 0.04em !important;
+        cursor: pointer !important;
+        transition: color 0.13s ease, border-color 0.13s ease, background 0.13s ease !important;
+        margin-left: 2px !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+      }
+      .__lotto_copy_btn:hover {
+        color: rgba(255,255,255,0.92) !important;
+        border-color: rgba(217,164,65,0.48) !important;
+        background: rgba(217,164,65,0.07) !important;
+      }
+      .__lotto_copy_btn.--copied {
+        color: var(--gold) !important;
+        border-color: rgba(217,164,65,0.42) !important;
+        background: rgba(217,164,65,0.09) !important;
+      }
+
+      /* 期號標籤 */
+      .__lotto_draw_badge {
+        margin-left: auto !important;
+        padding: 2px 8px !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 20px !important;
+        font: 10px var(--mono) !important;
+        color: var(--fg-3) !important;
+        letter-spacing: 0.05em !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* Toast 通知 */
+      #__lotto_toast {
+        position: fixed !important;
+        bottom: 22px !important;
+        right: 22px !important;
+        background: rgba(18,18,18,0.97) !important;
+        color: rgba(240,240,240,0.95) !important;
+        padding: 9px 16px !important;
+        border-radius: 10px !important;
+        font: 12px/1.5 -apple-system, system-ui, 'Segoe UI', sans-serif !important;
+        box-shadow: 0 4px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.07) !important;
+        z-index: 99999 !important;
+        transition: opacity 0.22s ease, transform 0.22s ease !important;
+        pointer-events: none !important;
+        max-width: 300px !important;
+        word-break: break-all !important;
+      }
     </style>`;
     // Inject after <head> so the DOCTYPE stays first; prepending the script
     // would push the parser into quirks mode. DOMParser always emits a <head>
@@ -2096,7 +2282,7 @@ const summaryHitStats = useMemo(() => {
       const cards = Array.from(document.querySelectorAll('.card'));
       for (const card of cards) {
         const text = card.textContent || '';
-        if (text.includes('????') && text.includes('TOP 2 CONSENSUS')) {
+        if (text.includes('綜合摘要') && text.includes('TOP 2 CONSENSUS')) {
           return card.querySelector('.card-b');
         }
       }
@@ -2144,13 +2330,13 @@ const summaryHitStats = useMemo(() => {
       });
       if (mount.dataset.signature === signature) return;
 
-      let statusText = '???????????????';
+      let statusText = '手動啟動，避免拖慢整頁與手機。';
       if (!bridge) {
-        statusText = '??????????? 1-2 ???????????????';
+        statusText = '摘要回測資料載入中，若 1-2 秒後仍未更新，請重新整理頁面。';
       } else if (phase === 'running') {
-        statusText = '??? ' + (stats.progress || 0) + '/' + (stats.total || 0);
+        statusText = '計算中 ' + (stats.progress || 0) + '/' + (stats.total || 0);
       } else if (phase === 'ready') {
-        statusText = '??? ' + (stats.total || 0) + ' ???';
+        statusText = '已完成 ' + (stats.total || 0) + ' 期回測';
       }
 
       const recentHtml = recent.length
@@ -2161,31 +2347,31 @@ const summaryHitStats = useMemo(() => {
                 '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.dateLabel || '') + '</div>' +
                 '<div style="font-family:var(--mono);color:var(--fg-3);">' + (row.periodLabel || '') + '</div>' +
                 '<div style="font-size:10px;color:var(--fg-2);line-height:1.5;">' +
-                  '<div>?? ' + ((row.picks || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div>' +
-                  '<div>?? ' + ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div>' +
+                  '<div>預測 ' + ((row.picks || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div>' +
+                  '<div>實開 ' + ((row.draw || []).map((n) => String(n).padStart(2, '0')).join(' ')) + '</div>' +
                 '</div>' +
                 '<div style="font:700 12px var(--mono);color:' + ((row.hits || 0) >= 1 ? 'var(--gold)' : 'var(--fg-3)') + ';">' + (row.hits || 0) + '/2</div>' +
               '</div>'
           ).join('')
-        : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">????????????????????</div>';
+        : '<div style="font-size:11px;color:var(--fg-3);padding:4px 0;">按下開始回測後，這裡會顯示最近命中明細。</div>';
 
       mount.innerHTML =
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
-          '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">?????</div>' +
+          '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">回測起始日</div>' +
           '<input data-summary-start type="date" value="' + dateValue + '" style="background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:12px var(--mono);" />' +
-          '<button data-summary-run type="button" ' + (!bridge ? 'disabled ' : '') + 'style="border:1px solid var(--line);background:var(--gold);color:#151515;border-radius:8px;padding:8px 12px;font:700 12px var(--mono);cursor:' + (!bridge ? 'not-allowed' : 'pointer') + ';opacity:' + (!bridge ? '0.6' : '1') + ';">' + (phase === 'running' ? '???' : '????') + '</button>' +
+          '<button data-summary-run type="button" ' + (!bridge ? 'disabled ' : '') + 'style="border:1px solid var(--line);background:var(--gold);color:#151515;border-radius:8px;padding:8px 12px;font:700 12px var(--mono);cursor:' + (!bridge ? 'not-allowed' : 'pointer') + ';opacity:' + (!bridge ? '0.6' : '1') + ';">' + (phase === 'running' ? '計算中' : '開始回測') + '</button>' +
         '</div>' +
         '<div style="margin-top:8px;font-size:10px;color:var(--fg-3);">' + statusText + '</div>' +
         '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(96px, 1fr));gap:8px;margin-top:12px;">' +
-          '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">2????</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--cyan);">' + pct(stats.bothRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 ????</div></div>' +
-          '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">???1?</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--gold);">' + pct(stats.hitRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 ???? 1 ?</div></div>' +
-          '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">????</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + ((stats.avgHits || 0).toFixed(2)) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">?? / 2 ?</div></div>' +
-          '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">??</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + (stats.samples || 0) + ' ?</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">? ' + (stats.cutoffLabel || dateValue) + ' ?</div></div>' +
+          '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">2碼全中率</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--cyan);">' + pct(stats.bothRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 兩碼全中</div></div>' +
+          '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">至少中1碼</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--gold);">' + pct(stats.hitRate) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">Top 2 命中至少 1 碼</div></div>' +
+          '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">平均命中</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + ((stats.avgHits || 0).toFixed(2)) + '</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">平均 / 2 碼</div></div>' +
+          '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-3);"><div style="font:10px var(--mono);color:var(--fg-3);">樣本</div><div style="margin-top:4px;font:700 16px var(--mono);color:var(--fg);">' + (stats.samples || 0) + ' 期</div><div style="margin-top:4px;font-size:10px;color:var(--fg-3);">自 ' + (stats.cutoffLabel || dateValue) + ' 起</div></div>' +
         '</div>' +
         '<div style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
-            '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">??????</div>' +
-            '<div style="font-size:10px;color:var(--fg-3);">???? 6 ???????</div>' +
+            '<div style="font:10px var(--mono);letter-spacing:0.08em;color:var(--fg-3);">最近命中明細</div>' +
+            '<div style="font-size:10px;color:var(--fg-3);">顯示最近 6 期回測結果，不一定包含 2 碼全中</div>' +
           '</div>' +
           recentHtml +
         '</div>';
@@ -2503,6 +2689,503 @@ const summaryHitStats = useMemo(() => {
   window.addEventListener('resize', reflowSidebarCards);
   setTimeout(reflowSidebarCards, 1200);
   setTimeout(reflowSidebarCards, 2500);
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════
+     進化 v2：Toast 通知、複製號碼按鈕、期號標籤
+════════════════════════════════════════════════════════ -->
+<script>
+(() => {
+  'use strict';
+
+  // ──────────────────────────────────────────────────
+  //  Toast 通知
+  // ──────────────────────────────────────────────────
+  let _toast = null, _toastTimer = null;
+  function showToast(msg, dur) {
+    dur = dur || 2400;
+    if (!_toast) {
+      _toast = document.createElement('div');
+      _toast.id = '__lotto_toast';
+      _toast.style.cssText = 'opacity:0;transform:translateY(8px)';
+      document.body.appendChild(_toast);
+    }
+    _toast.textContent = msg;
+    _toast.style.opacity = '1';
+    _toast.style.transform = 'translateY(0)';
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(function() {
+      _toast.style.opacity = '0';
+      _toast.style.transform = 'translateY(8px)';
+    }, dur);
+  }
+  window.__lottoShowToast = showToast;
+
+  // ──────────────────────────────────────────────────
+  //  複製號碼
+  // ──────────────────────────────────────────────────
+  var COPY_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;display:block"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  var CHECK_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;display:block"><polyline points="20 6 9 17 4 12"/></svg>';
+
+  function getHotNums(root) {
+    return Array.from((root || document).querySelectorAll('.markov-pill.hot'))
+      .map(function(el) { return el.textContent.trim(); })
+      .filter(function(t) { return /^\d{1,2}$/.test(t); });
+  }
+
+  function doCopy(text) {
+    if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    Object.assign(ta.style, { position:'fixed', opacity:'0', top:'0', left:'0', width:'1px', height:'1px' });
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    return Promise.resolve();
+  }
+
+  function injectCopyBtn() {
+    var predActions = document.querySelector('.pred-actions');
+    if (!predActions) return;
+    if (predActions.querySelector('.__lotto_copy_btn')) return;
+
+    var btn = document.createElement('button');
+    btn.className = '__lotto_copy_btn';
+    btn.type = 'button';
+    btn.title = '複製本次預測號碼';
+    btn.innerHTML = COPY_SVG + ' 複製號碼';
+
+    btn.addEventListener('click', function() {
+      var card = predActions.closest('.card') || predActions.closest('.card-b') || predActions.parentElement;
+      var nums = getHotNums(card);
+      if (!nums.length) nums = getHotNums(null);
+      if (!nums.length) { showToast('⚠ 請先選擇策略產生預測'); return; }
+      var text = nums.join('  ');
+      doCopy(text).then(function() {
+        showToast('✓ 已複製：' + text);
+        btn.classList.add('--copied');
+        btn.innerHTML = CHECK_SVG + ' 已複製';
+        setTimeout(function() {
+          btn.classList.remove('--copied');
+          btn.innerHTML = COPY_SVG + ' 複製號碼';
+        }, 2000);
+      }).catch(function() {
+        showToast('⚠ 複製失敗，請手動選取號碼');
+      });
+    });
+
+    predActions.appendChild(btn);
+  }
+
+  // ──────────────────────────────────────────────────
+  //  期號標籤（注入到頭部卡片標題）
+  // ──────────────────────────────────────────────────
+  function injectDrawBadge() {
+    var bridge = window.__lottoSummaryBridge;
+    if (!bridge || !bridge.draws || !bridge.draws.length) return;
+    var latest = bridge.draws[0];
+    if (!latest || !(latest.draw || latest.id)) return;
+    var drawId = latest.draw || latest.id;
+
+    var headers = document.querySelectorAll('.card-h');
+    for (var i = 0; i < headers.length; i++) {
+      var h = headers[i];
+      var txt = (h.textContent || '');
+      if (txt.indexOf('今彩') !== -1 || txt.indexOf('號碼分析') !== -1 ||
+          txt.indexOf('機率') !== -1 || txt.indexOf('預測') !== -1) {
+        if (h.querySelector('.__lotto_draw_badge')) return;
+        var badge = document.createElement('span');
+        badge.className = '__lotto_draw_badge';
+        badge.textContent = '最新 #' + drawId;
+        // ensure flex layout
+        if (getComputedStyle(h).display !== 'flex') {
+          h.style.display = 'flex';
+          h.style.alignItems = 'center';
+        }
+        h.appendChild(badge);
+        return;
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────────
+  //  主循環
+  // ──────────────────────────────────────────────────
+  function enhance() {
+    try { injectCopyBtn(); } catch(e) {}
+    try { injectDrawBadge(); } catch(e) {}
+  }
+
+  setTimeout(enhance, 1200);
+  setTimeout(enhance, 2600);
+  setTimeout(enhance, 5000);
+  setInterval(enhance, 6000);
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════
+     策略回測引擎：點選策略卡片 → 顯示歷史預測 vs 實際開獎
+════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  // ─── 工具：取得開獎號碼陣列 ───────────────────────────
+  function getNums(draw) {
+    if (!draw) return [];
+    return (draw.nums || draw.numbers || draw.picks || draw.balls || []).slice();
+  }
+
+  // ─── 工具：從歷史算頻率 ───────────────────────────────
+  function freq(history, n) {
+    var f = {};
+    for (var i = 1; i <= 39; i++) f[i] = 0;
+    var lim = Math.min(n || 50, history.length);
+    for (var i = 0; i < lim; i++) {
+      getNums(history[i]).forEach(function(x) { if (f[x] !== undefined) f[x]++; });
+    }
+    return f;
+  }
+
+  // ─── 工具：排序取前5 ──────────────────────────────────
+  function top5(scores) {
+    return Object.keys(scores).map(Number)
+      .sort(function(a, b) { return scores[b] - scores[a]; })
+      .slice(0, 5).sort(function(a, b) { return a - b; });
+  }
+
+  // ─── 各策略算法 ───────────────────────────────────────
+  var S = {
+    'S-01': function(h) {                         // 熱號優先
+      return top5(freq(h, 30));
+    },
+    'S-02': function(h) {                         // 冷號反彈
+      var f = freq(h, 30), s = {};
+      for (var i = 1; i <= 39; i++) s[i] = 30 - f[i];
+      return top5(s);
+    },
+    'S-03': function(h) {                         // 平衡分布
+      var f = freq(h, 50);
+      var odd = [], even = [];
+      for (var i = 1; i <= 39; i++) (i % 2 ? odd : even).push(i);
+      odd.sort(function(a, b) { return f[b] - f[a]; });
+      even.sort(function(a, b) { return f[b] - f[a]; });
+      return odd.slice(0, 3).concat(even.slice(0, 2)).sort(function(a, b) { return a - b; });
+    },
+    'S-04': function(h) {                         // 間隔分析
+      var last = {};
+      for (var i = 1; i <= 39; i++) last[i] = h.length;
+      for (var i = 0; i < h.length; i++) {
+        getNums(h[i]).forEach(function(x) { if (last[x] === h.length) last[x] = i; });
+      }
+      return top5(last);
+    },
+    'S-05': function(h, idx) {                    // 純隨機
+      var seed = (idx || 0) * 1103515245 + 12345;
+      function rnd(max) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed % max) + 1; }
+      var picks = [], seen = {};
+      while (picks.length < 5) { var n = rnd(39); if (!seen[n]) { seen[n] = 1; picks.push(n); } }
+      return picks.sort(function(a, b) { return a - b; });
+    },
+    'S-06': function(h) {                         // 軌跡運動 (Markov)
+      var trans = {};
+      for (var i = 1; i <= 39; i++) trans[i] = {};
+      for (var i = 0; i < h.length - 1; i++) {
+        var cur = getNums(h[i]), nxt = getNums(h[i + 1]);
+        cur.forEach(function(a) { nxt.forEach(function(b) { trans[a][b] = (trans[a][b] || 0) + 1; }); });
+      }
+      if (!h[0]) return S['S-01'](h);
+      var scores = {};
+      for (var i = 1; i <= 39; i++) scores[i] = 0;
+      getNums(h[0]).forEach(function(a) {
+        for (var n = 1; n <= 39; n++) scores[n] += trans[a][n] || 0;
+      });
+      return top5(scores);
+    },
+    'S-07': function(h) {                         // 二階馬可夫
+      if (h.length < 2) return S['S-06'](h);
+      var trans = {};
+      for (var i = 0; i < h.length - 2; i++) {
+        var k = (getNums(h[i + 1]).join(','));
+        var nxt = getNums(h[i]);
+        if (!trans[k]) trans[k] = {};
+        nxt.forEach(function(n) { trans[k][n] = (trans[k][n] || 0) + 1; });
+      }
+      var k2 = getNums(h[0]).join(',');
+      var scores = {};
+      for (var i = 1; i <= 39; i++) scores[i] = 0;
+      if (trans[k2]) { for (var n in trans[k2]) scores[n] = trans[k2][n]; }
+      var res = top5(scores);
+      return res.length === 5 ? res : S['S-06'](h);
+    },
+    'S-08': function(h, idx) {                    // 天干地支
+      var cycle = (idx || 0) % 60;
+      var f = freq(h, 20), s = {};
+      for (var i = 1; i <= 39; i++) {
+        s[i] = f[i] * 0.5 + (i % 12 === cycle % 12 ? 3 : 0) + (i % 10 === cycle % 10 ? 2 : 0);
+      }
+      return top5(s);
+    },
+    'S-11': function(h) {                         // 指數動量 EWMA
+      var s = {}, w = 1, alpha = 0.15;
+      for (var i = 1; i <= 39; i++) s[i] = 0;
+      for (var i = 0; i < Math.min(60, h.length); i++) {
+        getNums(h[i]).forEach(function(n) { s[n] += w; });
+        w *= (1 - alpha);
+      }
+      return top5(s);
+    },
+    'S-12': function(h) {                         // RSI 震盪
+      var gains = {}, losses = {};
+      for (var i = 1; i <= 39; i++) { gains[i] = 0; losses[i] = 0; }
+      var n = Math.min(14, h.length - 1);
+      for (var i = 0; i < n; i++) {
+        var cur = {}, prv = {};
+        getNums(h[i]).forEach(function(x) { cur[x] = 1; });
+        getNums(h[i + 1]).forEach(function(x) { prv[x] = 1; });
+        for (var num = 1; num <= 39; num++) {
+          if (cur[num] && !prv[num]) gains[num]++;
+          else if (!cur[num] && prv[num]) losses[num]++;
+        }
+      }
+      var s = {};
+      for (var i = 1; i <= 39; i++) {
+        var rs = gains[i] / (losses[i] + 0.001);
+        s[i] = 100 - (100 / (1 + rs)); // 高RSI=超買，取反=選低RSI
+        s[i] = 100 - s[i];
+      }
+      return top5(s);
+    },
+    'S-13': function(h) {                         // 泊松期望回歸
+      var n = Math.min(100, h.length);
+      var f = freq(h, n), expected = n * 5 / 39, s = {};
+      for (var i = 1; i <= 39; i++) s[i] = Math.max(0, expected - f[i]);
+      return top5(s);
+    },
+    'S-14': function(h) {                         // 連號追蹤
+      if (!h[0]) return S['S-01'](h);
+      var s = {};
+      for (var i = 1; i <= 39; i++) s[i] = 1;
+      getNums(h[0]).forEach(function(n) {
+        if (n > 1) s[n - 1] += 3;
+        if (n < 39) s[n + 1] += 3;
+        s[n] += 1;
+      });
+      return top5(s);
+    },
+    'S-15': function(h) {                         // 尾數輪轉
+      if (!h[0]) return S['S-01'](h);
+      var lastDigits = getNums(h[0]).map(function(n) { return n % 10; });
+      var s = {};
+      for (var i = 1; i <= 39; i++) {
+        s[i] = 0;
+        var d = i % 10;
+        lastDigits.forEach(function(ld) {
+          var diff = (d - ld + 10) % 10;
+          if (diff === 1 || diff === 2) s[i] += 3;
+          else if (diff === 3) s[i] += 2;
+        });
+      }
+      return top5(s);
+    }
+  };
+
+  var NAMES = {
+    'S-01':'熱號優先','S-02':'冷號反彈','S-03':'平衡分布','S-04':'間隔分析',
+    'S-05':'純隨機','S-06':'軌跡運動','S-07':'純二階馬可夫','S-08':'天干地支',
+    'S-11':'指數動量','S-12':'RSI震盪','S-13':'泊松回歸','S-14':'連號追蹤','S-15':'尾數輪轉'
+  };
+
+  // ─── 執行回測 ─────────────────────────────────────────
+  function runBacktest(sid) {
+    var bridge = window.__lottoSummaryBridge;
+    var draws = bridge && bridge.draws;
+    if (!draws || draws.length < 10) return null;
+    var fn = S[sid];
+    if (!fn) return null;
+
+    var rows = [], st = { t: 0, h0: 0, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0 };
+    var limit = Math.min(30, draws.length - 5);
+
+    for (var i = 0; i < limit; i++) {
+      var actual = getNums(draws[i]);
+      if (!actual.length) continue;
+      var history = draws.slice(i + 1);
+      var pred;
+      try { pred = fn(history, i); } catch(e) { pred = S['S-01'](history); }
+      if (!pred || pred.length < 5) continue;
+
+      var aSet = {};
+      actual.forEach(function(n) { aSet[n] = 1; });
+      var hits = pred.filter(function(n) { return aSet[n]; }).length;
+
+      st.t++; st['h' + hits]++;
+      rows.push({ draw: draws[i], pred: pred, actual: actual, hits: hits });
+    }
+    return { rows: rows, st: st };
+  }
+
+  // ─── 渲染面板 ─────────────────────────────────────────
+  function pill(n, highlight, color) {
+    var bg = highlight ? (color || 'var(--gold)') : 'rgba(255,255,255,0.07)';
+    var fg = highlight ? '#151515' : 'var(--fg-3)';
+    var fw = highlight ? '700' : '400';
+    return '<span style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;font:' + fw + ' 11px var(--mono);background:' + bg + ';color:' + fg + ';margin-right:2px;">' + (n < 10 ? '0' : '') + n + '</span>';
+  }
+
+  function renderPanel(sid) {
+    var data = runBacktest(sid);
+    if (!data) return '<div style="padding:16px;color:var(--fg-3);">資料不足，無法回測</div>';
+    var st = data.st, rows = data.rows;
+    if (!st.t) return '<div style="padding:16px;color:var(--fg-3);">資料不足</div>';
+
+    var hit1p = st.t - st.h0;
+    var hitRate = Math.round(hit1p / st.t * 100);
+    var avg = ((st.h1 + st.h2*2 + st.h3*3 + st.h4*4 + st.h5*5) / st.t).toFixed(2);
+    var hit3p = Math.round((st.h3 + st.h4 + st.h5) / st.t * 100);
+
+    var html = '';
+
+    // 統計卡
+    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">';
+    [
+      { l: '至少中1碼', v: hitRate + '%', c: 'var(--gold)' },
+      { l: '平均命中數', v: avg + ' 碼', c: 'var(--fg)' },
+      { l: '中3碼以上', v: hit3p + '%', c: 'var(--cyan)' },
+      { l: '完全命中', v: st.h5 + ' 次', c: 'var(--green, #4ade80)' }
+    ].forEach(function(x) {
+      html += '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);text-align:center;">';
+      html += '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.06em;">' + x.l + '</div>';
+      html += '<div style="font:700 17px var(--mono);color:' + x.c + ';margin-top:5px;">' + x.v + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // 命中分布柱狀
+    html += '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);margin-bottom:12px;">';
+    html += '<div style="font:10px var(--mono);color:var(--fg-3);margin-bottom:8px;letter-spacing:0.06em;">命中分布（共 ' + st.t + ' 期）</div>';
+    html += '<div style="display:flex;gap:6px;align-items:flex-end;height:48px;">';
+    for (var h = 0; h <= 5; h++) {
+      var cnt = st['h' + h] || 0;
+      var pct = cnt / st.t;
+      var barH = Math.max(3, Math.round(pct * 44));
+      var col = h === 0 ? 'rgba(255,255,255,0.1)' : h >= 4 ? 'var(--cyan)' : h >= 2 ? 'var(--gold)' : 'rgba(255,255,255,0.2)';
+      if (h === 5) col = '#4ade80';
+      html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">';
+      html += '<div style="font:9px var(--mono);color:var(--fg-3);">' + cnt + '</div>';
+      html += '<div style="width:100%;height:' + barH + 'px;background:' + col + ';border-radius:2px 2px 0 0;"></div>';
+      html += '<div style="font:9px var(--mono);color:var(--fg-3);">' + h + '碼</div>';
+      html += '</div>';
+    }
+    html += '</div></div>';
+
+    // 歷史明細表
+    html += '<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;">';
+    html += '<div style="display:grid;grid-template-columns:90px 1fr 1fr 48px;gap:0;background:var(--bg-3);border-bottom:1px solid var(--line);padding:8px 10px;">';
+    ['期號','預測號碼（金=命中）','實際開獎（青=命中）','命中'].forEach(function(t) {
+      html += '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.05em;">' + t + '</div>';
+    });
+    html += '</div>';
+    html += '<div style="max-height:300px;overflow-y:auto;">';
+
+    rows.forEach(function(r) {
+      var aSet = {};
+      r.actual.forEach(function(n) { aSet[n] = 1; });
+      var pSet = {};
+      r.pred.forEach(function(n) { pSet[n] = 1; });
+
+      var hitColor = r.hits === 0 ? 'var(--fg-3)' : r.hits >= 3 ? 'var(--cyan)' : 'var(--gold)';
+      var drawId = r.draw.draw || r.draw.id || r.draw.date || '';
+
+      html += '<div style="display:grid;grid-template-columns:90px 1fr 1fr 48px;gap:0;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.04);align-items:center;">';
+      html += '<div style="font:11px var(--mono);color:var(--fg-3);">' + drawId + '</div>';
+      // 預測
+      html += '<div>';
+      r.pred.forEach(function(n) { html += pill(n, !!aSet[n], 'var(--gold)'); });
+      html += '</div>';
+      // 實際
+      html += '<div>';
+      r.actual.forEach(function(n) { html += pill(n, !!pSet[n], 'var(--cyan)'); });
+      html += '</div>';
+      html += '<div style="text-align:center;font:700 13px var(--mono);color:' + hitColor + ';">' + r.hits + '/5</div>';
+      html += '</div>';
+    });
+
+    html += '</div></div>';
+    return html;
+  }
+
+  // ─── 注入面板容器 ────────────────────────────────────
+  var currentSid = null;
+
+  function showPanel(sid) {
+    if (sid === currentSid) return;
+    currentSid = sid;
+
+    var panel = document.getElementById('__lotto_bt_panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = '__lotto_bt_panel';
+      panel.style.cssText = 'margin-top:20px;';
+
+      // 注入到主欄位末端
+      var grid = document.querySelector('.grid');
+      var col = grid && grid.children[0];
+      var detailRow = document.querySelector('[data-summary-detail-row]');
+      var extras = document.querySelector('[data-panel-extras]');
+
+      var target = detailRow || extras || col || grid;
+      if (target) {
+        if (target.parentElement) target.parentElement.insertBefore(panel, target.nextSibling || null);
+        else target.appendChild(panel);
+      }
+    }
+
+    if (!sid) { panel.innerHTML = ''; return; }
+
+    // 標題卡
+    var name = NAMES[sid] || sid;
+    panel.innerHTML =
+      '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;animation:__lotto_fadein 0.3s ease both;">' +
+        '<div class="card-h" style="padding:12px 16px;display:flex;align-items:center;">' +
+          '<div>' + sid + '・' + name + '・歷史回測</div>' +
+          '<div style="margin-left:auto;font:10px var(--mono);color:var(--fg-3);">過去 30 期預測 vs 實際</div>' +
+        '</div>' +
+        '<div class="card-b" style="padding:14px 16px;">' +
+          renderPanel(sid) +
+        '</div>' +
+      '</div>';
+  }
+
+  // ─── 監聽策略卡片點擊 ────────────────────────────────
+  document.addEventListener('click', function(e) {
+    var card = e.target.closest && e.target.closest('.strategy > *');
+    if (!card) return;
+    var txt = card.textContent || '';
+    var m = txt.match(/S-(\d+)/);
+    if (!m) return;
+    var sid = 'S-' + ('0' + m[1]).slice(-2);
+    if (S[sid]) setTimeout(function() { showPanel(sid); }, 150);
+  }, true);
+
+  // 啟動時偵測已選中的策略
+  setTimeout(function() {
+    var cards = document.querySelectorAll('.strategy > *');
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      var cs = window.getComputedStyle(c);
+      var bc = cs.borderColor || '';
+      if (bc.indexOf('217') !== -1 || bc.indexOf('165') !== -1) {
+        var m = (c.textContent || '').match(/S-(\d+)/);
+        if (m) { showPanel('S-' + ('0' + m[1]).slice(-2)); break; }
+      }
+    }
+  }, 2500);
+
 })();
 </script>
 
