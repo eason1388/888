@@ -2828,7 +2828,7 @@ const summaryHitStats = useMemo(() => {
 </script>
 
 <!-- ═══════════════════════════════════════════════════════
-     策略回測引擎：點選策略卡片 → 顯示歷史預測 vs 實際開獎
+     策略回測引擎 v3：嚴謹數學方法 + 統計基準對比
 ════════════════════════════════════════════════════════ -->
 <script>
 (function() {
@@ -2837,351 +2837,511 @@ const summaryHitStats = useMemo(() => {
   // ─── 工具：取得開獎號碼陣列 ───────────────────────────
   function getNums(draw) {
     if (!draw) return [];
-    return (draw.nums || draw.numbers || draw.picks || draw.balls || []).slice();
+    var n = draw.nums || draw.numbers || draw.picks || draw.balls || [];
+    return Array.isArray(n) ? n.slice() : [];
   }
 
-  // ─── 工具：從歷史算頻率 ───────────────────────────────
-  function freq(history, n) {
-    var f = {};
-    for (var i = 1; i <= 39; i++) f[i] = 0;
-    var lim = Math.min(n || 50, history.length);
-    for (var i = 0; i < lim; i++) {
-      getNums(history[i]).forEach(function(x) { if (f[x] !== undefined) f[x]++; });
+  // ─── 數學工具 ─────────────────────────────────────────
+
+  function allNums() { var a=[]; for(var i=1;i<=39;i++) a.push(i); return a; }
+
+  // 排序取前5，升序輸出
+  function top5(scores) {
+    return allNums()
+      .sort(function(a,b){ return (scores[b]||0)-(scores[a]||0); })
+      .slice(0,5)
+      .sort(function(a,b){ return a-b; });
+  }
+
+  // 時間衰減頻率（alpha=0 → 等權，alpha>0 → 新近加權）
+  function freqW(history, maxN, alpha) {
+    var f={}, w=1;
+    for(var i=1;i<=39;i++) f[i]=0;
+    var lim=Math.min(maxN||history.length, history.length);
+    for(var i=0;i<lim;i++){
+      getNums(history[i]).forEach(function(n){ f[n]+=w; });
+      if(alpha>0) w*=(1-alpha);
     }
     return f;
   }
 
-  // ─── 工具：排序取前5 ──────────────────────────────────
-  function top5(scores) {
-    return Object.keys(scores).map(Number)
-      .sort(function(a, b) { return scores[b] - scores[a]; })
-      .slice(0, 5).sort(function(a, b) { return a - b; });
+  // 熱號備援（策略降級用）
+  function fallback(h){ return top5(freqW(h,50,0.05)); }
+
+  // ─── 策略算法（嚴謹數學版）──────────────────────────
+
+  // S-01 熱號優先：EWMA α=0.12 加權頻率，近期出現更重要
+  function sHot(h) {
+    return top5(freqW(h, 150, 0.12));
   }
 
-  // ─── 各策略算法 ───────────────────────────────────────
-  var S = {
-    'S-01': function(h) {                         // 熱號優先
-      return top5(freq(h, 30));
-    },
-    'S-02': function(h) {                         // 冷號反彈
-      var f = freq(h, 30), s = {};
-      for (var i = 1; i <= 39; i++) s[i] = 30 - f[i];
-      return top5(s);
-    },
-    'S-03': function(h) {                         // 平衡分布
-      var f = freq(h, 50);
-      var odd = [], even = [];
-      for (var i = 1; i <= 39; i++) (i % 2 ? odd : even).push(i);
-      odd.sort(function(a, b) { return f[b] - f[a]; });
-      even.sort(function(a, b) { return f[b] - f[a]; });
-      return odd.slice(0, 3).concat(even.slice(0, 2)).sort(function(a, b) { return a - b; });
-    },
-    'S-04': function(h) {                         // 間隔分析
-      var last = {};
-      for (var i = 1; i <= 39; i++) last[i] = h.length;
-      for (var i = 0; i < h.length; i++) {
-        getNums(h[i]).forEach(function(x) { if (last[x] === h.length) last[x] = i; });
-      }
-      return top5(last);
-    },
-    'S-05': function(h, idx) {                    // 純隨機
-      var seed = (idx || 0) * 1103515245 + 12345;
-      function rnd(max) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed % max) + 1; }
-      var picks = [], seen = {};
-      while (picks.length < 5) { var n = rnd(39); if (!seen[n]) { seen[n] = 1; picks.push(n); } }
-      return picks.sort(function(a, b) { return a - b; });
-    },
-    'S-06': function(h) {                         // 軌跡運動 (Markov)
-      var trans = {};
-      for (var i = 1; i <= 39; i++) trans[i] = {};
-      for (var i = 0; i < h.length - 1; i++) {
-        var cur = getNums(h[i]), nxt = getNums(h[i + 1]);
-        cur.forEach(function(a) { nxt.forEach(function(b) { trans[a][b] = (trans[a][b] || 0) + 1; }); });
-      }
-      if (!h[0]) return S['S-01'](h);
-      var scores = {};
-      for (var i = 1; i <= 39; i++) scores[i] = 0;
-      getNums(h[0]).forEach(function(a) {
-        for (var n = 1; n <= 39; n++) scores[n] += trans[a][n] || 0;
+  // S-02 冷號反彈：超期比 = 當前缺期 / 歷史平均間隔
+  function sCold(h) {
+    var N = Math.min(h.length, 200);
+    var cnt={}, last={};
+    for(var i=1;i<=39;i++){ cnt[i]=0; last[i]=N; }
+    for(var i=0;i<N;i++){
+      getNums(h[i]).forEach(function(n){
+        cnt[n]++;
+        if(last[n]===N) last[n]=i;
       });
-      return top5(scores);
-    },
-    'S-07': function(h) {                         // 二階馬可夫
-      if (h.length < 2) return S['S-06'](h);
-      var trans = {};
-      for (var i = 0; i < h.length - 2; i++) {
-        var k = (getNums(h[i + 1]).join(','));
-        var nxt = getNums(h[i]);
-        if (!trans[k]) trans[k] = {};
-        nxt.forEach(function(n) { trans[k][n] = (trans[k][n] || 0) + 1; });
+    }
+    // 期望間隔 = N / (平均每期出現5個，每號期望=N*5/39)
+    var scores={};
+    for(var i=1;i<=39;i++){
+      var expectedGap = cnt[i]>0 ? N/cnt[i] : N;
+      scores[i] = last[i] / Math.max(expectedGap, 1); // 超期比越大越冷
+    }
+    return top5(scores);
+  }
+
+  // S-03 平衡分布：根據最近奇偶比例動態調整，EWMA 打分
+  function sBalance(h) {
+    var f = freqW(h, 80, 0.05);
+    var recentOdd=0, recentTotal=0;
+    for(var i=0;i<Math.min(20,h.length);i++){
+      getNums(h[i]).forEach(function(n){ recentTotal++; if(n%2) recentOdd++; });
+    }
+    var oddPct = recentTotal>0 ? recentOdd/recentTotal : 0.5;
+    // 最近奇數偏多 → 選更多偶數來平衡
+    var nOdd = oddPct>0.55 ? 2 : 3;
+    var odds  = allNums().filter(function(n){return n%2;}).sort(function(a,b){return f[b]-f[a];});
+    var evens = allNums().filter(function(n){return !n%2;}).sort(function(a,b){return f[b]-f[a];});
+    return odds.slice(0,nOdd).concat(evens.slice(0,5-nOdd)).sort(function(a,b){return a-b;});
+  }
+
+  // S-04 間隔分析：計算每號「歷史出現間隔」的標準差與均值，選超期最多的
+  function sGap(h) {
+    var N = Math.min(h.length, 200);
+    var appearances={};
+    for(var i=1;i<=39;i++) appearances[i]=[];
+    for(var i=0;i<N;i++){
+      getNums(h[i]).forEach(function(n){ appearances[n].push(i); });
+    }
+    var scores={};
+    for(var num=1;num<=39;num++){
+      var apps=appearances[num];
+      if(!apps.length){ scores[num]=N; continue; }
+      // 計算平均間隔
+      var gaps=[];
+      for(var j=0;j<apps.length-1;j++) gaps.push(apps[j+1]-apps[j]);
+      var meanGap = gaps.length>0 ? gaps.reduce(function(a,b){return a+b;},0)/gaps.length : N/5;
+      scores[num] = apps[0] / Math.max(meanGap, 1); // 超期比
+    }
+    return top5(scores);
+  }
+
+  // S-05 純隨機：LCG 確定性偽隨機，以 idx 為 seed
+  function sRandom(h, idx) {
+    var seed = ((idx||0)+7)*1664525+1013904223;
+    function next(){ seed=(seed*1664525+1013904223)>>>0; return (seed%39)+1; }
+    var picks=[], seen={};
+    while(picks.length<5){ var n=next(); if(!seen[n]){seen[n]=1;picks.push(n);} }
+    return picks.sort(function(a,b){return a-b;});
+  }
+
+  // S-06 一階 Markov：完整正規化轉移矩陣 P(j|i)
+  function sMarkov1(h) {
+    var trans={}, cnt={};
+    for(var i=1;i<=39;i++){ trans[i]={}; cnt[i]=0; }
+    var lim=Math.min(h.length-1, 200);
+    // h[0]=最新，h[1]=次新；h[t+1]→h[t] 是時間順序
+    for(var t=0;t<lim;t++){
+      var prev=getNums(h[t+1]); // 較舊的一期（前因）
+      var next=getNums(h[t]);   // 較新的一期（後果）
+      prev.forEach(function(a){
+        cnt[a]++;
+        next.forEach(function(b){
+          trans[a][b]=(trans[a][b]||0)+1;
+        });
+      });
+    }
+    if(!h[0]) return fallback(h);
+    var scores={};
+    for(var i=1;i<=39;i++) scores[i]=0;
+    // 給定最新一期，計算 P(next=j) = Σ_i P(j|i)
+    getNums(h[0]).forEach(function(a){
+      var total=cnt[a]||1;
+      for(var b=1;b<=39;b++){
+        scores[b]+=(trans[a][b]||0)/total;
       }
-      var k2 = getNums(h[0]).join(',');
-      var scores = {};
-      for (var i = 1; i <= 39; i++) scores[i] = 0;
-      if (trans[k2]) { for (var n in trans[k2]) scores[n] = trans[k2][n]; }
-      var res = top5(scores);
-      return res.length === 5 ? res : S['S-06'](h);
-    },
-    'S-08': function(h, idx) {                    // 天干地支
-      var cycle = (idx || 0) % 60;
-      var f = freq(h, 20), s = {};
-      for (var i = 1; i <= 39; i++) {
-        s[i] = f[i] * 0.5 + (i % 12 === cycle % 12 ? 3 : 0) + (i % 10 === cycle % 10 ? 2 : 0);
+    });
+    return top5(scores);
+  }
+
+  // S-07 二階 Markov：以上一期號碼組合為 key，查下一期出現概率
+  function sMarkov2(h) {
+    if(h.length<3) return sMarkov1(h);
+    var trans={};
+    var lim=Math.min(h.length-2, 150);
+    for(var t=0;t<lim;t++){
+      var prev=getNums(h[t+1]).sort(function(a,b){return a-b;});
+      var nxt=getNums(h[t]);
+      var key=prev.join(',');
+      if(!trans[key]) trans[key]={};
+      nxt.forEach(function(n){ trans[key][n]=(trans[key][n]||0)+1; });
+    }
+    var lastKey=getNums(h[0]).sort(function(a,b){return a-b;}).join(',');
+    var hits=trans[lastKey];
+    if(!hits||!Object.keys(hits).length) return sMarkov1(h);
+    var scores={};
+    for(var i=1;i<=39;i++) scores[i]=hits[i]||0;
+    return top5(scores);
+  }
+
+  // S-08 天干地支：60週期共振（天干×地支各自對齊）+ 頻率校正
+  function sGanzhi(h, idx) {
+    var cycle=(idx||0)%60;
+    var f=freqW(h, 40, 0);
+    var scores={};
+    for(var i=1;i<=39;i++){
+      var tg=(i-1)%10, dz=(i-1)%12;
+      var cg=cycle%10, cz=cycle%12;
+      var resonance=(tg===cg?3:0)+(dz===cz?2:0);
+      scores[i]=resonance*1.5 + f[i];
+    }
+    return top5(scores);
+  }
+
+  // S-11 EWMA 指數動量：α=0.2，從最舊到最新累積 EMA
+  function sEWMA(h) {
+    var alpha=0.2;
+    var ema={};
+    // 初始值 = 理論期望概率 5/39
+    for(var i=1;i<=39;i++) ema[i]=5/39;
+    // 反向遍歷：從最舊（h末端）到最新（h[0]）
+    var draws=h.slice(0, Math.min(h.length,200)).reverse();
+    draws.forEach(function(d){
+      var set={};
+      getNums(d).forEach(function(n){ set[n]=1; });
+      for(var i=1;i<=39;i++){
+        ema[i]=alpha*(set[i]?1:0)+(1-alpha)*ema[i];
       }
-      return top5(s);
-    },
-    'S-11': function(h) {                         // 指數動量 EWMA
-      var s = {}, w = 1, alpha = 0.15;
-      for (var i = 1; i <= 39; i++) s[i] = 0;
-      for (var i = 0; i < Math.min(60, h.length); i++) {
-        getNums(h[i]).forEach(function(n) { s[n] += w; });
-        w *= (1 - alpha);
+    });
+    return top5(ema);
+  }
+
+  // S-12 RSI：標準 Wilder RSI，選低 RSI（超賣）號碼
+  function sRSI(h) {
+    var period=Math.min(14, h.length-1);
+    var avgGain={}, avgLoss={};
+    for(var i=1;i<=39;i++){ avgGain[i]=0; avgLoss[i]=0; }
+    // 計算前 period 期的平均 gain/loss
+    for(var t=0;t<period;t++){
+      var cur={}, prv={};
+      getNums(h[t]).forEach(function(n){ cur[n]=1; });
+      getNums(h[t+1]).forEach(function(n){ prv[n]=1; });
+      for(var i=1;i<=39;i++){
+        var appeared=cur[i]?1:0, wasHere=prv[i]?1:0;
+        if(appeared>wasHere) avgGain[i]++;
+        else if(appeared<wasHere) avgLoss[i]++;
       }
-      return top5(s);
-    },
-    'S-12': function(h) {                         // RSI 震盪
-      var gains = {}, losses = {};
-      for (var i = 1; i <= 39; i++) { gains[i] = 0; losses[i] = 0; }
-      var n = Math.min(14, h.length - 1);
-      for (var i = 0; i < n; i++) {
-        var cur = {}, prv = {};
-        getNums(h[i]).forEach(function(x) { cur[x] = 1; });
-        getNums(h[i + 1]).forEach(function(x) { prv[x] = 1; });
-        for (var num = 1; num <= 39; num++) {
-          if (cur[num] && !prv[num]) gains[num]++;
-          else if (!cur[num] && prv[num]) losses[num]++;
+    }
+    var scores={};
+    for(var i=1;i<=39;i++){
+      var ag=avgGain[i]/period, al=avgLoss[i]/period;
+      var rs=al>0 ? ag/al : ag>0 ? 100 : 1;
+      var rsi=100-100/(1+rs);
+      scores[i]=100-rsi; // 低RSI（超賣）→ 分數高
+    }
+    return top5(scores);
+  }
+
+  // S-13 Poisson 回歸：Z分數 = (期望值 - 實際值) / sqrt(期望值)
+  function sPoisson(h) {
+    var N=Math.min(h.length, 200);
+    var expected=N*5/39; // 每號的 Poisson 期望次數 λ
+    var cnt={};
+    for(var i=1;i<=39;i++) cnt[i]=0;
+    for(var t=0;t<N;t++) getNums(h[t]).forEach(function(n){ cnt[n]++; });
+    var scores={};
+    for(var i=1;i<=39;i++){
+      // Z>0 表示「出現次數低於期望」→ Poisson 預測補漲
+      scores[i]=(expected-cnt[i])/Math.sqrt(expected);
+    }
+    return top5(scores);
+  }
+
+  // S-14 連號追蹤：歷史中鄰接號的共現頻率
+  function sConsecutive(h) {
+    var scores={};
+    for(var i=1;i<=39;i++) scores[i]=0;
+    if(!h[0]) return fallback(h);
+    var last=getNums(h[0]), lSet={};
+    last.forEach(function(n){ lSet[n]=1; });
+    // 歷史共現：找「和最近開獎號碼相鄰」的號碼的出現頻率
+    for(var t=1;t<Math.min(h.length,100);t++){
+      getNums(h[t]).forEach(function(n){
+        if(lSet[n-1]||lSet[n+1]||lSet[n]) scores[n]+=1;
+      });
+    }
+    // 對上一期數字的鄰號直接加分
+    last.forEach(function(n){
+      if(n>1) scores[n-1]+=2;
+      if(n<39) scores[n+1]+=2;
+    });
+    return top5(scores);
+  }
+
+  // S-15 尾數輪轉：統計「前一期尾數 → 後一期尾數」的轉移
+  function sTailDigit(h) {
+    var tailTrans={};
+    for(var d=0;d<=9;d++){ tailTrans[d]={}; for(var e=0;e<=9;e++) tailTrans[d][e]=0; }
+    var lim=Math.min(h.length-1, 100);
+    for(var t=0;t<lim;t++){
+      var ct={}, nt={};
+      getNums(h[t]).forEach(function(n){ ct[n%10]=(ct[n%10]||0)+1; });
+      getNums(h[t+1]).forEach(function(n){ nt[n%10]=(nt[n%10]||0)+1; });
+      for(var from in ct){
+        for(var to in nt){
+          tailTrans[from][to]=(tailTrans[from][to]||0)+ct[from]*nt[to];
         }
       }
-      var s = {};
-      for (var i = 1; i <= 39; i++) {
-        var rs = gains[i] / (losses[i] + 0.001);
-        s[i] = 100 - (100 / (1 + rs)); // 高RSI=超買，取反=選低RSI
-        s[i] = 100 - s[i];
-      }
-      return top5(s);
-    },
-    'S-13': function(h) {                         // 泊松期望回歸
-      var n = Math.min(100, h.length);
-      var f = freq(h, n), expected = n * 5 / 39, s = {};
-      for (var i = 1; i <= 39; i++) s[i] = Math.max(0, expected - f[i]);
-      return top5(s);
-    },
-    'S-14': function(h) {                         // 連號追蹤
-      if (!h[0]) return S['S-01'](h);
-      var s = {};
-      for (var i = 1; i <= 39; i++) s[i] = 1;
-      getNums(h[0]).forEach(function(n) {
-        if (n > 1) s[n - 1] += 3;
-        if (n < 39) s[n + 1] += 3;
-        s[n] += 1;
-      });
-      return top5(s);
-    },
-    'S-15': function(h) {                         // 尾數輪轉
-      if (!h[0]) return S['S-01'](h);
-      var lastDigits = getNums(h[0]).map(function(n) { return n % 10; });
-      var s = {};
-      for (var i = 1; i <= 39; i++) {
-        s[i] = 0;
-        var d = i % 10;
-        lastDigits.forEach(function(ld) {
-          var diff = (d - ld + 10) % 10;
-          if (diff === 1 || diff === 2) s[i] += 3;
-          else if (diff === 3) s[i] += 2;
-        });
-      }
-      return top5(s);
     }
+    if(!h[0]) return fallback(h);
+    var lastTails={};
+    getNums(h[0]).forEach(function(n){ lastTails[n%10]=(lastTails[n%10]||0)+1; });
+    var scores={};
+    for(var i=1;i<=39;i++){
+      scores[i]=0;
+      var toD=i%10;
+      for(var from in lastTails){
+        scores[i]+=(tailTrans[from][toD]||0)*lastTails[from];
+      }
+    }
+    return top5(scores);
+  }
+
+  // S-ALL 全策略共識：所有策略投票，票數最多的5個號碼
+  function sEnsemble(h, idx) {
+    var votes={};
+    for(var i=1;i<=39;i++) votes[i]=0;
+    var fns=[sHot,sCold,sBalance,sGap,
+             function(h){return sRandom(h,idx);},
+             sMarkov1,sMarkov2,function(h){return sGanzhi(h,idx);},
+             sEWMA,sRSI,sPoisson,sConsecutive,sTailDigit];
+    fns.forEach(function(fn){
+      try{ fn(h).forEach(function(n){ votes[n]++; }); } catch(e){}
+    });
+    return top5(votes);
+  }
+
+  var STRAT_FNS = {
+    'S-01':sHot,'S-02':sCold,'S-03':sBalance,'S-04':sGap,
+    'S-05':function(h,i){return sRandom(h,i);},
+    'S-06':sMarkov1,'S-07':sMarkov2,
+    'S-08':function(h,i){return sGanzhi(h,i);},
+    'S-11':sEWMA,'S-12':sRSI,'S-13':sPoisson,
+    'S-14':sConsecutive,'S-15':sTailDigit,
+    'S-ALL':sEnsemble
   };
 
   var NAMES = {
-    'S-01':'熱號優先','S-02':'冷號反彈','S-03':'平衡分布','S-04':'間隔分析',
-    'S-05':'純隨機','S-06':'軌跡運動','S-07':'純二階馬可夫','S-08':'天干地支',
-    'S-11':'指數動量','S-12':'RSI震盪','S-13':'泊松回歸','S-14':'連號追蹤','S-15':'尾數輪轉'
+    'S-01':'熱號 EWMA','S-02':'冷號超期比','S-03':'奇偶平衡',
+    'S-04':'間隔均值回歸','S-05':'LCG隨機','S-06':'一階Markov',
+    'S-07':'二階Markov','S-08':'天干地支','S-11':'EWMA動量',
+    'S-12':'RSI超賣','S-13':'Poisson Z分數','S-14':'連號共現',
+    'S-15':'尾數轉移','S-ALL':'全策略共識'
   };
+
+  // ─── 理論隨機命中概率 C(5,k)*C(34,5-k)/C(39,5) ────────
+  function C(n,r){
+    if(r<0||r>n) return 0; if(r===0||r===n) return 1;
+    var res=1; for(var i=0;i<r;i++) res=res*(n-i)/(i+1); return res;
+  }
+  var RND_PROB={};
+  for(var _k=0;_k<=5;_k++) RND_PROB[_k]=C(5,_k)*C(34,5-_k)/C(39,5);
+  var RND_AVG=5*5/39; // 期望命中數
 
   // ─── 執行回測 ─────────────────────────────────────────
   function runBacktest(sid) {
-    var bridge = window.__lottoSummaryBridge;
-    var draws = bridge && bridge.draws;
-    if (!draws || draws.length < 10) return null;
-    var fn = S[sid];
-    if (!fn) return null;
+    var bridge=window.__lottoSummaryBridge;
+    var draws=bridge&&(bridge.draws||bridge.history);
+    if(!draws||draws.length<10) return null;
+    var fn=STRAT_FNS[sid]; if(!fn) return null;
 
-    var rows = [], st = { t: 0, h0: 0, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0 };
-    var limit = Math.min(30, draws.length - 5);
+    var rows=[], st={t:0};
+    for(var h=0;h<=5;h++) st['h'+h]=0;
+    var limit=Math.min(50, draws.length-5);
 
-    for (var i = 0; i < limit; i++) {
-      var actual = getNums(draws[i]);
-      if (!actual.length) continue;
-      var history = draws.slice(i + 1);
+    for(var i=0;i<limit;i++){
+      var actual=getNums(draws[i]);
+      if(!actual.length) continue;
+      var history=draws.slice(i+1);
+      if(history.length<5) break;
       var pred;
-      try { pred = fn(history, i); } catch(e) { pred = S['S-01'](history); }
-      if (!pred || pred.length < 5) continue;
-
-      var aSet = {};
-      actual.forEach(function(n) { aSet[n] = 1; });
-      var hits = pred.filter(function(n) { return aSet[n]; }).length;
-
-      st.t++; st['h' + hits]++;
-      rows.push({ draw: draws[i], pred: pred, actual: actual, hits: hits });
+      try{ pred=fn(history,i); } catch(e){ pred=fallback(history); }
+      if(!pred||pred.length<5) continue;
+      var aSet={};
+      actual.forEach(function(n){ aSet[n]=1; });
+      var hits=pred.filter(function(n){ return aSet[n]; }).length;
+      st.t++; st['h'+hits]++;
+      rows.push({draw:draws[i],pred:pred,actual:actual,hits:hits});
     }
-    return { rows: rows, st: st };
+    return rows.length ? {rows:rows,st:st} : null;
   }
 
   // ─── 渲染面板 ─────────────────────────────────────────
-  function pill(n, highlight, color) {
-    var bg = highlight ? (color || 'var(--gold)') : 'rgba(255,255,255,0.07)';
-    var fg = highlight ? '#151515' : 'var(--fg-3)';
-    var fw = highlight ? '700' : '400';
-    return '<span style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;font:' + fw + ' 11px var(--mono);background:' + bg + ';color:' + fg + ';margin-right:2px;">' + (n < 10 ? '0' : '') + n + '</span>';
+  function pill(n, type) {
+    // type: 'gold'=預測命中, 'cyan'=實際中且被預測, null=未中
+    var bg=type==='gold'?'var(--gold)':type==='cyan'?'var(--cyan)':'rgba(255,255,255,0.08)';
+    var fg=type?'#151515':'rgba(255,255,255,0.4)';
+    var fw=type?'700':'400';
+    return '<span style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;font:'+fw+' 11px var(--mono);background:'+bg+';color:'+fg+';margin-right:3px;">'+(n<10?'0':'')+n+'</span>';
   }
 
   function renderPanel(sid) {
-    var data = runBacktest(sid);
-    if (!data) return '<div style="padding:16px;color:var(--fg-3);">資料不足，無法回測</div>';
-    var st = data.st, rows = data.rows;
-    if (!st.t) return '<div style="padding:16px;color:var(--fg-3);">資料不足</div>';
+    var data=runBacktest(sid);
+    if(!data) return '<div style="padding:20px;color:var(--fg-3);text-align:center;">資料不足（需至少 15 期歷史資料）</div>';
+    var st=data.st, rows=data.rows, t=st.t;
+    if(!t) return '<div style="padding:20px;color:var(--fg-3);">資料不足</div>';
 
-    var hit1p = st.t - st.h0;
-    var hitRate = Math.round(hit1p / st.t * 100);
-    var avg = ((st.h1 + st.h2*2 + st.h3*3 + st.h4*4 + st.h5*5) / st.t).toFixed(2);
-    var hit3p = Math.round((st.h3 + st.h4 + st.h5) / st.t * 100);
+    var hit1p=(t-st.h0)/t;
+    var hit2p=(st.h2+st.h3+st.h4+st.h5)/t;
+    var hit3p=(st.h3+st.h4+st.h5)/t;
+    var avgH=(st.h1+st.h2*2+st.h3*3+st.h4*4+st.h5*5)/t;
 
-    var html = '';
+    // 隨機基準
+    var rnd1p=1-RND_PROB[0];
+    var rnd2p=RND_PROB[2]+RND_PROB[3]+RND_PROB[4]+RND_PROB[5];
+    var rnd3p=RND_PROB[3]+RND_PROB[4]+RND_PROB[5];
 
-    // 統計卡
-    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">';
-    [
-      { l: '至少中1碼', v: hitRate + '%', c: 'var(--gold)' },
-      { l: '平均命中數', v: avg + ' 碼', c: 'var(--fg)' },
-      { l: '中3碼以上', v: hit3p + '%', c: 'var(--cyan)' },
-      { l: '完全命中', v: st.h5 + ' 次', c: 'var(--green, #4ade80)' }
-    ].forEach(function(x) {
-      html += '<div style="padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);text-align:center;">';
-      html += '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.06em;">' + x.l + '</div>';
-      html += '<div style="font:700 17px var(--mono);color:' + x.c + ';margin-top:5px;">' + x.v + '</div>';
-      html += '</div>';
-    });
-    html += '</div>';
-
-    // 命中分布柱狀
-    html += '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);margin-bottom:12px;">';
-    html += '<div style="font:10px var(--mono);color:var(--fg-3);margin-bottom:8px;letter-spacing:0.06em;">命中分布（共 ' + st.t + ' 期）</div>';
-    html += '<div style="display:flex;gap:6px;align-items:flex-end;height:48px;">';
-    for (var h = 0; h <= 5; h++) {
-      var cnt = st['h' + h] || 0;
-      var pct = cnt / st.t;
-      var barH = Math.max(3, Math.round(pct * 44));
-      var col = h === 0 ? 'rgba(255,255,255,0.1)' : h >= 4 ? 'var(--cyan)' : h >= 2 ? 'var(--gold)' : 'rgba(255,255,255,0.2)';
-      if (h === 5) col = '#4ade80';
-      html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">';
-      html += '<div style="font:9px var(--mono);color:var(--fg-3);">' + cnt + '</div>';
-      html += '<div style="width:100%;height:' + barH + 'px;background:' + col + ';border-radius:2px 2px 0 0;"></div>';
-      html += '<div style="font:9px var(--mono);color:var(--fg-3);">' + h + '碼</div>';
-      html += '</div>';
+    function pct(v){return (v*100).toFixed(1)+'%';}
+    function badge(actual,base){
+      var d=(actual-base)*100;
+      var col=d>0.5?'var(--cyan)':d<-0.5?'#f87171':'var(--fg-3)';
+      return '<span style="font:10px var(--mono);color:'+col+';">'+(d>0?'+':'')+d.toFixed(1)+'%</span>';
     }
-    html += '</div></div>';
+
+    var html='';
+
+    // 4 統計卡
+    html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">';
+    [
+      {l:'中1碼以上',v:pct(hit1p),b:badge(hit1p,rnd1p),c:'var(--gold)'},
+      {l:'平均命中',v:avgH.toFixed(2)+' 碼',b:badge(avgH,RND_AVG),c:'var(--fg)'},
+      {l:'中2碼以上',v:pct(hit2p),b:badge(hit2p,rnd2p),c:'var(--cyan)'},
+      {l:'中3碼以上',v:pct(hit3p),b:badge(hit3p,rnd3p),c:'#a78bfa'}
+    ].forEach(function(x){
+      html+='<div style="padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);text-align:center;">';
+      html+='<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.05em;">'+x.l+'</div>';
+      html+='<div style="font:700 17px var(--mono);color:'+x.c+';margin-top:5px;">'+x.v+'</div>';
+      html+='<div style="font:10px var(--mono);margin-top:3px;">'+x.b+' vs 隨機</div>';
+      html+='</div>';
+    });
+    html+='</div>';
+
+    // 命中分布（實際 vs 理論隨機）
+    html+='<div style="padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);margin-bottom:14px;">';
+    html+='<div style="font:10px var(--mono);color:var(--fg-3);margin-bottom:10px;letter-spacing:0.05em;">命中分布　<span style="color:var(--gold)">▇</span> 策略實際　<span style="color:rgba(255,255,255,0.2)">▇</span> 純隨機理論（共 '+t+' 期）</div>';
+    html+='<div style="display:flex;gap:6px;align-items:flex-end;height:60px;">';
+    var maxP=0;
+    for(var h=0;h<=5;h++) maxP=Math.max(maxP,(st['h'+h]||0)/t,RND_PROB[h]);
+    for(var h=0;h<=5;h++){
+      var aP=(st['h'+h]||0)/t, rP=RND_PROB[h];
+      var aBar=Math.max(3,Math.round(aP/maxP*54));
+      var rBar=Math.max(2,Math.round(rP/maxP*54));
+      var col=h===0?'rgba(255,255,255,0.1)':h>=4?'#a78bfa':h>=2?'var(--cyan)':'var(--gold)';
+      if(h===5) col='#4ade80';
+      html+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;">';
+      html+='<div style="font:9px var(--mono);color:var(--fg-3);">'+(st['h'+h]||0)+'</div>';
+      html+='<div style="width:100%;position:relative;height:54px;display:flex;align-items:flex-end;gap:1px;">';
+      html+='<div style="flex:1;height:'+aBar+'px;background:'+col+';border-radius:2px 2px 0 0;"></div>';
+      html+='<div style="flex:1;height:'+rBar+'px;background:rgba(255,255,255,0.18);border-radius:2px 2px 0 0;"></div>';
+      html+='</div>';
+      html+='<div style="font:9px var(--mono);color:var(--fg-3);">'+h+'碼</div>';
+      html+='</div>';
+    }
+    html+='</div></div>';
 
     // 歷史明細表
-    html += '<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;">';
-    html += '<div style="display:grid;grid-template-columns:90px 1fr 1fr 48px;gap:0;background:var(--bg-3);border-bottom:1px solid var(--line);padding:8px 10px;">';
-    ['期號','預測號碼（金=命中）','實際開獎（青=命中）','命中'].forEach(function(t) {
-      html += '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.05em;">' + t + '</div>';
+    html+='<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;">';
+    html+='<div style="display:grid;grid-template-columns:86px 1fr 1fr 44px;background:var(--bg-3);padding:8px 12px;border-bottom:1px solid var(--line);">';
+    ['期號','預測（金=命中）','開獎（青=命中）','命中'].forEach(function(t){
+      html+='<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.04em;">'+t+'</div>';
     });
-    html += '</div>';
-    html += '<div style="max-height:300px;overflow-y:auto;">';
-
-    rows.forEach(function(r) {
-      var aSet = {};
-      r.actual.forEach(function(n) { aSet[n] = 1; });
-      var pSet = {};
-      r.pred.forEach(function(n) { pSet[n] = 1; });
-
-      var hitColor = r.hits === 0 ? 'var(--fg-3)' : r.hits >= 3 ? 'var(--cyan)' : 'var(--gold)';
-      var drawId = r.draw.draw || r.draw.id || r.draw.date || '';
-
-      html += '<div style="display:grid;grid-template-columns:90px 1fr 1fr 48px;gap:0;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.04);align-items:center;">';
-      html += '<div style="font:11px var(--mono);color:var(--fg-3);">' + drawId + '</div>';
-      // 預測
-      html += '<div>';
-      r.pred.forEach(function(n) { html += pill(n, !!aSet[n], 'var(--gold)'); });
-      html += '</div>';
-      // 實際
-      html += '<div>';
-      r.actual.forEach(function(n) { html += pill(n, !!pSet[n], 'var(--cyan)'); });
-      html += '</div>';
-      html += '<div style="text-align:center;font:700 13px var(--mono);color:' + hitColor + ';">' + r.hits + '/5</div>';
-      html += '</div>';
+    html+='</div>';
+    html+='<div style="max-height:320px;overflow-y:auto;">';
+    rows.slice(0,50).forEach(function(r,i){
+      var aSet={}, pSet={};
+      r.actual.forEach(function(n){ aSet[n]=1; });
+      r.pred.forEach(function(n){ pSet[n]=1; });
+      var hCol=r.hits===0?'rgba(255,255,255,0.3)':r.hits>=4?'#a78bfa':r.hits>=2?'var(--cyan)':'var(--gold)';
+      var bg=i%2===0?'transparent':'rgba(255,255,255,0.015)';
+      var drawId=r.draw.draw||r.draw.id||r.draw.date||'';
+      html+='<div style="display:grid;grid-template-columns:86px 1fr 1fr 44px;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.04);align-items:center;background:'+bg+';">';
+      html+='<div style="font:11px var(--mono);color:var(--fg-3);white-space:nowrap;">'+drawId+'</div>';
+      html+='<div>'+r.pred.map(function(n){return pill(n,aSet[n]?'gold':null);}).join('')+'</div>';
+      html+='<div>'+r.actual.map(function(n){return pill(n,pSet[n]?'cyan':null);}).join('')+'</div>';
+      html+='<div style="text-align:center;font:700 12px var(--mono);color:'+hCol+';">'+r.hits+'/5</div>';
+      html+='</div>';
     });
-
-    html += '</div></div>';
+    html+='</div></div>';
     return html;
   }
 
-  // ─── 注入面板容器 ────────────────────────────────────
-  var currentSid = null;
+  // ─── 面板容器管理 ─────────────────────────────────────
+  var currentSid=null;
 
   function showPanel(sid) {
-    if (sid === currentSid) return;
-    currentSid = sid;
+    if(sid===currentSid) return;
+    currentSid=sid;
 
-    var panel = document.getElementById('__lotto_bt_panel');
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.id = '__lotto_bt_panel';
-      panel.style.cssText = 'margin-top:20px;';
-
-      // 注入到主欄位末端
-      var grid = document.querySelector('.grid');
-      var col = grid && grid.children[0];
-      var detailRow = document.querySelector('[data-summary-detail-row]');
-      var extras = document.querySelector('[data-panel-extras]');
-
-      var target = detailRow || extras || col || grid;
-      if (target) {
-        if (target.parentElement) target.parentElement.insertBefore(panel, target.nextSibling || null);
-        else target.appendChild(panel);
+    var panel=document.getElementById('__lotto_bt_v3');
+    if(!panel){
+      panel=document.createElement('div');
+      panel.id='__lotto_bt_v3';
+      panel.style.cssText='margin-top:20px;';
+      var grid=document.querySelector('.grid');
+      var col=grid&&grid.children[0];
+      var det=document.querySelector('[data-summary-detail-row]');
+      var ex=document.querySelector('[data-panel-extras]');
+      var target=det||ex||col||grid;
+      if(target){
+        if(det) det.parentElement.insertBefore(panel,det.nextSibling);
+        else if(ex) ex.parentElement.insertBefore(panel,ex.nextSibling);
+        else if(col) col.appendChild(panel);
+        else grid.insertAdjacentElement('afterend',panel);
       }
     }
 
-    if (!sid) { panel.innerHTML = ''; return; }
-
-    // 標題卡
-    var name = NAMES[sid] || sid;
-    panel.innerHTML =
-      '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;animation:__lotto_fadein 0.3s ease both;">' +
-        '<div class="card-h" style="padding:12px 16px;display:flex;align-items:center;">' +
-          '<div>' + sid + '・' + name + '・歷史回測</div>' +
-          '<div style="margin-left:auto;font:10px var(--mono);color:var(--fg-3);">過去 30 期預測 vs 實際</div>' +
-        '</div>' +
-        '<div class="card-b" style="padding:14px 16px;">' +
-          renderPanel(sid) +
-        '</div>' +
+    if(!sid){ panel.innerHTML=''; return; }
+    var name=NAMES[sid]||sid;
+    panel.innerHTML=
+      '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;animation:__lotto_fadein 0.3s ease both;">'+
+        '<div class="card-h" style="padding:12px 16px;display:flex;align-items:center;gap:8px;">'+
+          '<div>'+sid+' · '+name+'</div>'+
+          '<div style="font:10px var(--mono);color:var(--fg-3);">50期回測 · 嚴謹數學方法</div>'+
+          '<div style="margin-left:auto;font:10px var(--mono);color:rgba(255,255,255,0.25);">vs 純隨機基準</div>'+
+        '</div>'+
+        '<div class="card-b" style="padding:14px 16px;"><div id="__lotto_bt_body">計算中...</div></div>'+
       '</div>';
+
+    // 非同步渲染避免 UI 卡頓
+    setTimeout(function(){
+      var body=document.getElementById('__lotto_bt_body');
+      if(body) body.innerHTML=renderPanel(sid);
+    }, 60);
   }
 
-  // ─── 監聽策略卡片點擊 ────────────────────────────────
+  // ─── 點擊偵測 ─────────────────────────────────────────
   document.addEventListener('click', function(e) {
-    var card = e.target.closest && e.target.closest('.strategy > *');
-    if (!card) return;
-    var txt = card.textContent || '';
-    var m = txt.match(/S-(\d+)/);
-    if (!m) return;
-    var sid = 'S-' + ('0' + m[1]).slice(-2);
-    if (S[sid]) setTimeout(function() { showPanel(sid); }, 150);
+    var card=e.target.closest&&e.target.closest('.strategy > *');
+    if(!card) return;
+    var m=(card.textContent||'').match(/S-(\d+)/);
+    if(!m) return;
+    var sid='S-'+('0'+m[1]).slice(-2);
+    if(STRAT_FNS[sid]) setTimeout(function(){ showPanel(sid); }, 200);
   }, true);
 
   // 啟動時偵測已選中的策略
-  setTimeout(function() {
-    var cards = document.querySelectorAll('.strategy > *');
-    for (var i = 0; i < cards.length; i++) {
-      var c = cards[i];
-      var cs = window.getComputedStyle(c);
-      var bc = cs.borderColor || '';
-      if (bc.indexOf('217') !== -1 || bc.indexOf('165') !== -1) {
-        var m = (c.textContent || '').match(/S-(\d+)/);
-        if (m) { showPanel('S-' + ('0' + m[1]).slice(-2)); break; }
+  setTimeout(function(){
+    var cards=document.querySelectorAll('.strategy > *');
+    for(var i=0;i<cards.length;i++){
+      var bc=window.getComputedStyle(cards[i]).borderColor||'';
+      if(bc.indexOf('217')!==-1||bc.indexOf('165')!==-1){
+        var m=(cards[i].textContent||'').match(/S-(\d+)/);
+        if(m){ showPanel('S-'+('0'+m[1]).slice(-2)); return; }
       }
     }
   }, 2500);
