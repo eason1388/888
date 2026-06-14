@@ -3660,26 +3660,11 @@ const summaryHitStats = useMemo(() => {
     return html;
   }
 
-  // ─── 注入所有元件 ────────────────────────────────────
-  // v5.4: buildTodayPanel → 由 replacePredictionPanel() 取代（直接修改 React 卡片）
-  //       buildHeatMap   → 移除（React 已有「頻率熱力圖」分頁，完全重複）
-  //       buildLeaderboard → 保留（獨立價值）
-  function buildAll() {
-    var widgets = buildLeaderboard() || '';
-    if (!widgets) return;
-
-    var el = document.getElementById('__lotto_v4_widgets');
-    if (el) { el.innerHTML = widgets; return; }
-    el = document.createElement('div');
-    el.id = '__lotto_v4_widgets';
-    el.innerHTML = widgets;
-
-    // 插入在 backtest panel 之前，或 grid 之後
-    var bt = document.getElementById('__lotto_bt_v3');
-    var grid = document.querySelector('.grid');
-    if (bt) bt.insertAdjacentElement('beforebegin', el);
-    else if (grid) grid.insertAdjacentElement('afterend', el);
-  }
+  // ─── v5.5：v4 所有小工具已由 v5 腳本完整接管，buildAll 停用 ────────────
+  // buildTodayPanel  → replacePredictionPanel() 取代
+  // buildHeatMap     → 已移除（React 本身有頻率熱力圖）
+  // buildLeaderboard → rebuildTracker() 取代（避免產生第二個追蹤器）
+  function buildAll() { /* 全部停用，防止重複渲染 */ }
 
   // ─── 點擊排行榜列 → 展開策略詳情 ─────────────────────
   document.addEventListener('click', function(e) {
@@ -3865,7 +3850,7 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 4. 重建策略命中率追蹤（使用 v3 引擎 2碼統計）── */
+  /* ── 4. 重建策略命中率追蹤（v5.5：手機優化卡片列 + 進度條）── */
   function rebuildTracker() {
     var eng = window.__lottoEngine;
     if (!eng || !eng.runBT) return;
@@ -3878,8 +3863,8 @@ const summaryHitStats = useMemo(() => {
     var cardB = card.querySelector('.card-b');
     if (!cardB) return;
 
-    // 若已建過且內容不變，跳過
-    if (card.getAttribute('data-v5t') === 'done') return;
+    // v5.5：標記 cardB（不是 card），React 刷新 card-b 內容時屬性消失 → 自動重跑
+    if (cardB.getAttribute('data-v5t') === 'done') return;
 
     var sids = ['S-01','S-02','S-03','S-04','S-05','S-06','S-07',
                 'S-08','S-11','S-12','S-13','S-14','S-15','S-ALL'];
@@ -3901,81 +3886,88 @@ const summaryHitStats = useMemo(() => {
     });
 
     if (!res.length) return;
-    card.setAttribute('data-v5t','done');
-
+    cardB.setAttribute('data-v5t', 'done');
     res.sort(function(a,b){ return b.avg - a.avg; });
 
     var rnd1p = eng.rndProb ? 1 - eng.rndProb[0] : 0.243;
     var rnd2p = eng.rndProb ? eng.rndProb[2] : 0.0135;
     var rndAvg = eng.rndAvg || (2*5/39);
+    var maxAvg = res[0].avg;
 
-    function pct(v){ return (v*100).toFixed(1)+'%'; }
-    function badge(v, base) {
+    function pct(v) { return (v*100).toFixed(1)+'%'; }
+    function diff(v, base) {
       var d = (v-base)*100;
-      var c = d>0.3?'#5ae0b0':d<-0.3?'#f87171':'rgba(255,255,255,0.35)';
-      return '<span style="font:10px var(--mono);color:'+c+';">'+(d>=0?'+':'')+d.toFixed(1)+'%</span>';
+      return (d>=0?'+':'')+d.toFixed(1)+'%';
     }
+    function aboveBase(v, base) { return v > base * 1.02; }
 
-    var html = '';
-
-    // 說明列
-    html += '<div style="font:10px var(--mono);color:var(--fg-3);margin-bottom:12px;line-height:1.6;">';
-    html += '2碼預測 · 隨機基準：中1碼+ '+pct(rnd1p)+'　兩碼全中 '+pct(rnd2p)+'　期望命中 '+rndAvg.toFixed(3)+'</div>';
-
-    // 表格
-    html += '<div style="border:1px solid var(--line);border-radius:14px;overflow:hidden;">';
-
-    // 表頭
-    html += '<div style="display:grid;grid-template-columns:28px minmax(0,1fr) 72px 72px 72px;padding:10px 16px;background:var(--bg-3);border-bottom:1px solid var(--line);" class="__v5_tracker_head">';
-    ['','策略','中1碼+','兩碼全中','平均命中'].forEach(function(h){
-      html += '<div class="__v5_tracker_head" style="font:700 10px var(--mono);color:var(--fg-3);letter-spacing:0.06em;">'+h+'</div>';
-    });
+    // ── 基準說明列
+    var html = '<div style="padding:0 2px 14px;font:10px var(--mono);color:var(--fg-3);line-height:2;">';
+    html += '2碼預測隨機基準&nbsp;·&nbsp;';
+    html += '中1碼+ <b style="color:var(--fg-2)">'+pct(rnd1p)+'</b>&nbsp;&nbsp;';
+    html += '兩碼全中 <b style="color:var(--fg-2)">'+pct(rnd2p)+'</b>&nbsp;&nbsp;';
+    html += '期望命中 <b style="color:var(--fg-2)">'+rndAvg.toFixed(3)+'</b>';
     html += '</div>';
 
-    // 隨機基準行
-    html += '<div style="display:grid;grid-template-columns:28px minmax(0,1fr) 72px 72px 72px;padding:10px 16px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.06);">';
-    html += '<div style="font:11px var(--mono);color:var(--fg-3);">—</div>';
-    html += '<div><span style="font:11px var(--mono);color:var(--fg-3);">純隨機基準</span></div>';
-    html += '<div style="font:11px var(--mono);color:var(--fg-3);">'+pct(rnd1p)+'</div>';
-    html += '<div style="font:11px var(--mono);color:var(--fg-3);">'+pct(rnd2p)+'</div>';
-    html += '<div style="font:11px var(--mono);color:var(--fg-3);">'+rndAvg.toFixed(3)+'</div>';
-    html += '</div>';
+    // ── 策略卡片列
+    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
 
-    // 各策略行
+    var medals = ['🥇','🥈','🥉'];
     res.forEach(function(r, idx) {
-      var medal = idx===0?'🥇':idx===1?'🥈':idx===2?'🥉':'';
-      var nameCol = idx<3?'var(--gold)':idx<7?'var(--fg)':'var(--fg-2)';
-      var beatBase = r.avg > rndAvg*1.02;
-      var rowBg = idx%2===0?'transparent':'rgba(255,255,255,0.012)';
-      html += '<div class="__v5_tracker_row __v4_rank_row" data-sid="'+r.sid+'" ';
-      html += 'style="display:grid;grid-template-columns:28px minmax(0,1fr) 72px 72px 72px;background:'+rowBg+';cursor:pointer;">';
-      html += '<div style="font:13px;line-height:1;">'+(medal||('<span style="font:11px var(--mono);color:var(--fg-3);">'+(idx+1)+'</span>'))+'</div>';
-      html += '<div>';
-      html += '<div class="__v5_tracker_sid">'+r.sid+'</div>';
-      html += '<div class="__v5_tracker_name">'+r.name+'</div>';
+      var isTop = idx < 3;
+      var beatRnd = aboveBase(r.avg, rndAvg);
+      var barW = maxAvg > 0 ? Math.min(100, Math.round(r.avg / maxAvg * 100)) : 0;
+      var barColor = isTop ? 'var(--gold)' : beatRnd ? 'var(--cyan)' : 'rgba(255,255,255,0.12)';
+      var avgColor = isTop ? 'var(--gold)' : beatRnd ? 'var(--cyan)' : 'var(--fg-3)';
+      var rowBg = isTop ? 'rgba(212,175,55,0.05)' : 'rgba(255,255,255,0.015)';
+      var rankDisp = idx < 3 ? medals[idx] : ('<span style="font:11px var(--mono);color:var(--fg-3);">'+(idx+1)+'</span>');
+
+      html += '<div class="__v5_tr_row" data-sid="'+r.sid+'" style="';
+      html += 'border:1px solid '+(isTop?'rgba(212,175,55,0.25)':'var(--line)')+';';
+      html += 'border-radius:12px;padding:12px 14px;cursor:pointer;';
+      html += 'background:'+rowBg+';">';
+
+      // 第一行：排名 + 策略 + 平均命中分數
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">';
+      html += '<div style="min-width:24px;text-align:center;font-size:15px;line-height:1;">'+rankDisp+'</div>';
+      html += '<div style="flex:1;min-width:0;">';
+      html += '<span style="font:700 12px var(--mono);color:var(--gold);letter-spacing:0.05em;">'+r.sid+'</span>';
+      html += '<span style="font:11px var(--mono);color:var(--fg-3);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+r.name+'</span>';
       html += '</div>';
-      html += '<div>';
-      html += '<div class="__v5_tracker_stat" style="color:'+(r.h1p>=rnd1p*1.05?'var(--gold)':'var(--fg)')+';">'+pct(r.h1p)+'</div>';
-      html += '<div class="__v5_tracker_diff">'+badge(r.h1p,rnd1p)+'</div>';
+      html += '<div style="font:700 16px var(--mono);color:'+avgColor+';white-space:nowrap;">'+r.avg.toFixed(3)+'</div>';
       html += '</div>';
-      html += '<div>';
-      html += '<div class="__v5_tracker_stat" style="color:'+(r.h2p>=rnd2p*1.5?'var(--cyan)':'var(--fg)')+';">'+pct(r.h2p)+'</div>';
-      html += '<div class="__v5_tracker_diff">'+badge(r.h2p,rnd2p)+'</div>';
+
+      // 進度條
+      html += '<div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.07);margin-bottom:9px;">';
+      html += '<div style="height:100%;width:'+barW+'%;border-radius:2px;background:'+barColor+';"></div>';
       html += '</div>';
-      html += '<div>';
-      html += '<div class="__v5_tracker_stat" style="color:'+(beatBase?'var(--gold)':'var(--fg)')+';">'+r.avg.toFixed(3)+'</div>';
-      html += '<div class="__v5_tracker_diff">'+badge(r.avg,rndAvg)+'</div>';
+
+      // 第三行：中1碼+ 和 兩碼全中
+      html += '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
+      // 中1碼+
+      var c1 = aboveBase(r.h1p, rnd1p) ? 'var(--gold)' : 'var(--fg-3)';
+      html += '<span style="font:10px var(--mono);color:var(--fg-3);">中1碼+&nbsp;';
+      html += '<b style="color:'+c1+'">'+pct(r.h1p)+'</b>';
+      html += '<span style="color:'+(aboveBase(r.h1p,rnd1p)?'#5ae0b0':'rgba(255,255,255,0.3)');
+      html += ';font-size:9px;">&nbsp;('+diff(r.h1p,rnd1p)+')</span></span>';
+      // 兩碼全中
+      var c2 = aboveBase(r.h2p, rnd2p) ? 'var(--cyan)' : 'var(--fg-3)';
+      html += '<span style="font:10px var(--mono);color:var(--fg-3);">兩碼全中&nbsp;';
+      html += '<b style="color:'+c2+'">'+pct(r.h2p)+'</b>';
+      html += '<span style="color:'+(aboveBase(r.h2p,rnd2p)?'#5ae0b0':'rgba(255,255,255,0.3)');
+      html += ';font-size:9px;">&nbsp;('+diff(r.h2p,rnd2p)+')</span></span>';
       html += '</div>';
-      html += '</div>';
+
+      html += '</div>'; // /__v5_tr_row
     });
 
-    html += '</div>';
-    html += '<div style="margin-top:10px;font:9px var(--mono);color:var(--fg-3);">點擊策略列 → 展開近期開獎歷史比對</div>';
+    html += '</div>'; // 外層 flex column
+    html += '<div style="margin-top:12px;text-align:center;font:9px var(--mono);color:var(--fg-3);letter-spacing:0.08em;">點擊策略列 → 展開近期開獎歷史比對</div>';
 
     cardB.innerHTML = html;
 
-    // 讓排行榜列也能展開回測
-    cardB.querySelectorAll('.__v4_rank_row[data-sid]').forEach(function(row) {
+    // 讓新設計的策略列點擊展開回測
+    cardB.querySelectorAll('.__v5_tr_row[data-sid]').forEach(function(row) {
       row.addEventListener('click', function() {
         var sid = row.getAttribute('data-sid');
         if (sid && window.__lottoShowPanel) window.__lottoShowPanel(sid);
@@ -3984,7 +3976,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v5.4';
+  var V5_VERSION = 'v5.5';
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
     var badge = document.createElement('div');
@@ -4027,16 +4019,7 @@ const summaryHitStats = useMemo(() => {
   var mo = new MutationObserver(function(muts) {
     var hasNew = muts.some(function(m){ return m.addedNodes.length>0; });
     if (!hasNew) return;
-    // 若 tracker 被 React 覆蓋，清掉 flag 讓它重建
-    var c = Array.from(document.querySelectorAll('.card')).find(function(x){
-      return (x.textContent||'').includes('策略命中率追蹤');
-    });
-    if (c && c.getAttribute('data-v5t')==='done') {
-      var b = c.querySelector('.card-b');
-      if (b && !b.querySelector('.__v5_tracker_head')) {
-        c.removeAttribute('data-v5t');
-      }
-    }
+    // v5.5：tracker flag 已移至 cardB，React 刷新 card-b 內容時屬性自動消失，無需手動清除
     // 若預測球列被 React 刷新（新 DOM 節點），data-v5pred 消失 → 自動重套用
     if (_timer) clearTimeout(_timer);
     _timer = setTimeout(applyAll, 350);
