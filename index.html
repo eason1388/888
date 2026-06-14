@@ -3661,10 +3661,11 @@ const summaryHitStats = useMemo(() => {
   }
 
   // ─── 注入所有元件 ────────────────────────────────────
+  // v5.4: buildTodayPanel → 由 replacePredictionPanel() 取代（直接修改 React 卡片）
+  //       buildHeatMap   → 移除（React 已有「頻率熱力圖」分頁，完全重複）
+  //       buildLeaderboard → 保留（獨立價值）
   function buildAll() {
-    buildTodayPanel();
-
-    var widgets = (buildHeatMap()||'') + (buildLeaderboard()||'');
+    var widgets = buildLeaderboard() || '';
     if (!widgets) return;
 
     var el = document.getElementById('__lotto_v4_widgets');
@@ -3744,104 +3745,123 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 3a. 主預測區「下期預測號碼」只留 Top 2 ── */
-  function limitMainPrediction() {
-    if (document.querySelector('[data-v5pred]')) return;
+  /* ── 3a. 主預測區「下期預測號碼」直接替換為 2 顆球（v5.4：完全接管 card-b）── */
+  function replacePredictionPanel() {
+    // 若 card-b 已被我們接管，且 React 未重渲（屬性還在），則跳過
+    if (document.querySelector('.card-b[data-v5pred]')) return;
 
-    // 找「下期預測號碼」區塊的 DOM 節點
-    var predSection = null;
-    var tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-    var tn;
-    while ((tn = tw.nextNode())) {
-      if ((tn.textContent || '').trim() === '下期預測號碼') {
-        predSection = tn.parentElement;
-        break;
-      }
-    }
-    if (!predSection) return;
+    var eng = window.__lottoEngine;
+    if (!eng || !eng.fns || !eng.fns['S-ALL']) return;
 
-    // 往上最多 6 層找到包住整個區塊的容器
-    var section = predSection;
-    for (var up = 0; up < 6; up++) {
-      if (!section.parentElement) break;
-      section = section.parentElement;
-      // 停在足夠大的容器（內含 5 顆球）
-      if (section.querySelectorAll('*').length > 15) break;
-    }
+    // 取歷史開獎
+    var draws = [];
+    try {
+      var bridge = window.__lottoSummaryBridge;
+      draws = (bridge && (bridge.draws || bridge.history)) || [];
+    } catch(e) {}
+    if (draws.length < 5) return;
+    var history = draws.slice(1);
 
-    // 在此容器內掃描：找到「直接子元素 4-6 個，且每個 child 都含 % 符號」的 flex 列
-    // 關鍵：React 把 number + % 合成一個 child，textContent 是 "0765%" 或 "07\n65%"
-    // 只要有 % 就算該 child 是「球單元」
-    var ballRow = null;
-    var allEls = section.querySelectorAll('*');
-    for (var i = 0; i < allEls.length; i++) {
-      var el = allEls[i];
-      var kids = Array.from(el.children);
-      if (kids.length < 4 || kids.length > 7) continue;
-      // 每個 child 的 textContent 含 % 才算
-      var pctCount = kids.filter(function(k){ return /%/.test(k.textContent || ''); }).length;
-      if (pctCount >= 4) { ballRow = el; break; }
-    }
-    if (!ballRow) return;
-    ballRow.setAttribute('data-v5pred', '1');
+    // 找到「下期預測號碼」card
+    var predCard = null;
+    document.querySelectorAll('.card').forEach(function(card) {
+      if (predCard) return;
+      var h = card.querySelector('.card-h');
+      if (h && (h.textContent || '').includes('下期預測號碼')) predCard = card;
+    });
+    if (!predCard) return;
 
-    var units = Array.from(ballRow.children);
-    var info = units.map(function(u) {
-      var m = (u.textContent || '').match(/(\d{1,3})%/);
-      return { el: u, pct: m ? parseInt(m[1]) : 0 };
+    var cardB = predCard.querySelector('.card-b');
+    if (!cardB) return;
+
+    // S-ALL 取 Top 2
+    var picks = [];
+    try {
+      picks = (eng.fns['S-ALL'](history, 0) || []).slice(0, 2);
+    } catch(e) { return; }
+    if (picks.length < 2) return;
+
+    // 計算各策略投票支持度（在 Top 5 候選中出現算票）
+    var votes = {};
+    var total = 0;
+    var sids = ['S-01','S-02','S-03','S-04','S-05','S-06','S-07',
+                'S-08','S-11','S-12','S-13','S-14','S-15'];
+    sids.forEach(function(sid) {
+      if (!eng.fns[sid]) return;
+      try {
+        var p = eng.fns[sid](history, 0);
+        if (!p || !p.length) return;
+        total++;
+        p.slice(0,5).forEach(function(n) { votes[n] = (votes[n]||0) + 1; });
+      } catch(e) {}
     });
 
-    // 排序：Top 2 by percentage
-    var sorted = info.slice().sort(function(a,b){ return b.pct - a.pct; });
-    var keepEls = new Set([sorted[0] && sorted[0].el, sorted[1] && sorted[1].el]);
+    function fmt(n) { return String(n).padStart(2,'0'); }
+    function pct(n) { return total ? Math.round((votes[n]||0)/total*100) : 0; }
 
-    info.forEach(function(item) {
-      if (keepEls.has(item.el)) {
-        item.el.style.transform = 'scale(1.1)';
-        item.el.style.margin = '0 14px';
-      } else {
-        item.el.style.setProperty('display', 'none', 'important');
-      }
-    });
-
-    // 「X/5」→「X/2」
-    section.querySelectorAll('*').forEach(function(el) {
-      if (el.children.length > 0) return;
-      var t = el.textContent || '';
-      if (/\d\/5/.test(t)) el.textContent = t.replace(/\/5/g, '/2');
-    });
+    // 接管 card-b
+    cardB.setAttribute('data-v5pred', '1');
+    cardB.innerHTML =
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:20px;padding:28px 16px 22px;">' +
+        // 兩顆大球
+        '<div style="display:flex;gap:36px;align-items:flex-start;">' +
+          picks.map(function(n) {
+            var p = pct(n);
+            var vc = votes[n] || 0;
+            return (
+              '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">' +
+                '<div style="width:80px;height:80px;border-radius:50%;' +
+                'background:radial-gradient(circle at 35% 35%,#ffe06a 0%,#c8950a 100%);' +
+                'display:flex;align-items:center;justify-content:center;' +
+                'color:#1a0e00;font:800 28px/1 var(--mono);' +
+                'box-shadow:0 6px 24px rgba(212,175,55,0.55),0 2px 6px rgba(0,0,0,0.4);">' +
+                  fmt(n) +
+                '</div>' +
+                '<div style="font:700 16px var(--mono);color:var(--gold);">' + p + '%</div>' +
+                '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.04em;">' + vc + '/' + total + '&nbsp;策略</div>' +
+              '</div>'
+            );
+          }).join(
+            '<div style="width:1px;background:var(--line);align-self:stretch;margin-top:8px;"></div>'
+          ) +
+        '</div>' +
+        // 說明文字
+        '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.1em;text-align:center;line-height:1.6;">' +
+          '全策略共識 TOP 2　|　點擊下方策略卡查看個別預測' +
+        '</div>' +
+      '</div>';
   }
 
-  /* ── 3b. 策略卡片只顯示前2個預測號碼 ── */
+  /* ── 3b. 策略卡片只顯示前 2 個預測號碼（v5.4：更穩定的父層偵測）── */
   function limitPills() {
     document.querySelectorAll('.card').forEach(function(card) {
       if (card.getAttribute('data-v5p')) return;
       var hdr = card.querySelector('.card-h');
       if (!hdr || !/S-\d{2}/.test(hdr.textContent || '')) return;
 
-      // 找到含有 3+ 個 .markov-pill.hot 的 flex 容器
+      // 找到「直接含有 3+ 個 .markov-pill.hot」的父容器
       var processed = false;
-      card.querySelectorAll('div,span').forEach(function(el) {
-        var s = el.style || {};
-        var isFlexWrap = (el.getAttribute('style') || '').includes('flex-wrap');
-        if (!isFlexWrap) return;
-        var hotPills = Array.from(el.querySelectorAll('.markov-pill.hot'));
-        if (hotPills.length < 3) return;
-        hotPills.forEach(function(pill, idx) {
-          if (idx >= 2) pill.style.setProperty('display','none','important');
-          else {
-            // 讓保留的兩顆球更大更醒目
-            pill.classList.add('markov-pill');
-            pill.style.width = '34px';
-            pill.style.height = '34px';
-            pill.style.lineHeight = '34px';
-            pill.style.fontSize = '14px';
-            pill.style.fontWeight = '700';
+      card.querySelectorAll('div').forEach(function(el) {
+        if (processed) return;
+        var directHot = Array.from(el.children).filter(function(c) {
+          return c.classList && c.classList.contains('markov-pill') && c.classList.contains('hot');
+        });
+        if (directHot.length < 3) return;
+
+        directHot.forEach(function(pill, idx) {
+          if (idx >= 2) {
+            pill.style.setProperty('display', 'none', 'important');
+          } else {
+            pill.style.width = '38px';
+            pill.style.height = '38px';
+            pill.style.lineHeight = '38px';
+            pill.style.fontSize = '15px';
+            pill.style.fontWeight = '800';
           }
         });
         processed = true;
       });
-      if (processed) card.setAttribute('data-v5p','1');
+      if (processed) card.setAttribute('data-v5p', '1');
     });
   }
 
@@ -3964,7 +3984,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v5.3';
+  var V5_VERSION = 'v5.4';
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
     var badge = document.createElement('div');
@@ -3996,7 +4016,7 @@ const summaryHitStats = useMemo(() => {
       injectVersionBadge();
       hideSummary();
       removeDetail();
-      limitMainPrediction();
+      replacePredictionPanel();  // v5.4: 直接接管 card-b，比 limitMainPrediction 更可靠
       limitPills();
       rebuildTracker();
     } catch(e) {}
