@@ -3744,7 +3744,81 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 3. 策略卡片只顯示前2個預測號碼 ── */
+  /* ── 3a. 主預測區「下期預測號碼」只留 Top 2 ── */
+  function limitMainPrediction() {
+    // 已套用且 DOM 沒被 React 刷新就跳過
+    if (document.querySelector('[data-v5pred]')) return;
+
+    // 找到含「下期預測號碼」文字的元素
+    var header = null;
+    var tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    var tn;
+    while ((tn = tw.nextNode())) {
+      if ((tn.textContent || '').trim() === '下期預測號碼') { header = tn.parentElement; break; }
+    }
+    if (!header) return;
+
+    // 往上找最外層 card 容器（有 border / border-radius 的祖先）
+    var card = header;
+    for (var up = 0; up < 8; up++) {
+      if (!card.parentElement) break;
+      card = card.parentElement;
+      var s = card.getAttribute('style') || '';
+      if ((s.includes('border') && s.includes('1px')) || s.includes('border-radius')) break;
+    }
+
+    // 在 card 裡找 flex 行，其直接子元素包含 X% 文字（就是球列）
+    var ballRow = null;
+    var flexEls = Array.from(card.querySelectorAll('[style]')).filter(function(el) {
+      return (el.getAttribute('style') || '').includes('flex');
+    });
+    for (var fi = 0; fi < flexEls.length; fi++) {
+      var el = flexEls[fi];
+      var kids = Array.from(el.children);
+      if (kids.length < 4 || kids.length > 8) continue;
+      var pctCount = kids.filter(function(k){ return /\d+%/.test(k.textContent||''); }).length;
+      if (pctCount >= 3) { ballRow = el; break; }
+    }
+    if (!ballRow) return;
+    ballRow.setAttribute('data-v5pred', '1');
+
+    // 每個 child 是一個「球 + 百分比」單元
+    var units = Array.from(ballRow.children);
+    var info = units.map(function(u) {
+      var pctM = (u.textContent || '').match(/(\d+)%/);
+      return { el: u, pct: pctM ? parseInt(pctM[1]) : 0 };
+    });
+
+    // 排序取 Top 2
+    var byPct = info.slice().sort(function(a,b){ return b.pct - a.pct; });
+    var keepSet = {};
+    [byPct[0], byPct[1]].forEach(function(x){ if(x) keepSet[info.indexOf(x)] = true; });
+    // (需要找 units 裡的 index)
+    var keepEls = new Set();
+    byPct.slice(0,2).forEach(function(x){ keepEls.add(x.el); });
+
+    info.forEach(function(item) {
+      if (keepEls.has(item.el)) {
+        // 放大保留的2顆
+        item.el.style.transform = 'scale(1.08)';
+        item.el.style.margin = '0 12px';
+      } else {
+        item.el.style.setProperty('display','none','important');
+      }
+    });
+
+    // 更新「X/5」標示為「X/2」
+    var allText = card.querySelectorAll('*');
+    allText.forEach(function(el) {
+      if (el.children.length === 0) {
+        var t = el.textContent || '';
+        if (/鎖定\s*\d+\/5/.test(t)) el.textContent = t.replace(/\/5/, '/2');
+        if (t === '0/5') el.textContent = '0/2';
+      }
+    });
+  }
+
+  /* ── 3b. 策略卡片只顯示前2個預測號碼 ── */
   function limitPills() {
     document.querySelectorAll('.card').forEach(function(card) {
       if (card.getAttribute('data-v5p')) return;
@@ -3902,6 +3976,7 @@ const summaryHitStats = useMemo(() => {
     try {
       hideSummary();
       removeDetail();
+      limitMainPrediction();
       limitPills();
       rebuildTracker();
     } catch(e) {}
@@ -3922,6 +3997,7 @@ const summaryHitStats = useMemo(() => {
         c.removeAttribute('data-v5t');
       }
     }
+    // 若預測球列被 React 刷新（新 DOM 節點），data-v5pred 消失 → 自動重套用
     if (_timer) clearTimeout(_timer);
     _timer = setTimeout(applyAll, 350);
   });
