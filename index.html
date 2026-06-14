@@ -2241,6 +2241,38 @@ const summaryHitStats = useMemo(() => {
       .__v4_rank_row:hover { background:rgba(255,255,255,0.04) !important; }
       @keyframes __v4_slide { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
       .__v4_slide { animation:__v4_slide 0.35s ease both !important; }
+      /* ═══ v5 專業化 ═══ */
+      /* 2碼預測球 in strategy cards */
+      .__v5_pred2 { display:inline-flex !important; align-items:center !important; justify-content:center !important;
+        width:38px !important; height:38px !important; border-radius:50% !important;
+        font:700 14px var(--mono) !important; background:var(--gold) !important;
+        color:#141414 !important; box-shadow:0 2px 10px rgba(217,164,65,0.35) !important;
+        margin:0 3px !important; transition:transform 0.15s ease !important; }
+      .__v5_pred2:hover { transform:scale(1.12) !important; }
+      /* 策略命中率追蹤 增強 */
+      .__v5_tracker { font-size:13px !important; }
+      .__v5_tracker_head { font:700 11px var(--mono) !important; color:var(--fg-3) !important;
+        padding:10px 16px !important; letter-spacing:0.06em !important; }
+      .__v5_tracker_row { min-height:50px !important; padding:11px 16px !important;
+        border-bottom:1px solid rgba(255,255,255,0.05) !important; }
+      .__v5_tracker_row:hover { background:rgba(255,255,255,0.03) !important; }
+      .__v5_tracker_sid { font:700 13px var(--mono) !important; color:var(--gold) !important; }
+      .__v5_tracker_name { font:11px var(--mono) !important; color:var(--fg-3) !important; }
+      .__v5_tracker_stat { font:700 15px var(--mono) !important; }
+      .__v5_tracker_diff { font:10px var(--mono) !important; }
+      /* 手機優化 */
+      @media (max-width:640px) {
+        #__lotto_bt_v3 .v5-grid { grid-template-columns:56px 56px 1fr 34px !important; }
+        #__lotto_bt_v3 .v5-stat-grid { grid-template-columns:1fr 1fr !important; }
+        .__v4_bigball { width:34px !important; height:34px !important; font-size:12px !important; }
+        .__v4_hm_ball { width:24px !important; height:24px !important; font-size:9px !important; }
+        #__lotto_v4_widgets [style*="grid-template-columns:28px 1fr 70px 70px 70px"] {
+          grid-template-columns:18px 1fr 48px 52px 52px !important; }
+        .__v5_tracker_row { padding:9px 10px !important; }
+        .__v5_tracker_head { padding:8px 10px !important; }
+        .__v5_tracker_sid { font-size:12px !important; }
+        .__v5_tracker_stat { font-size:13px !important; }
+      }
     </style>`;
     // Inject after <head> so the DOCTYPE stays first; prepending the script
     // would push the parser into quirks mode. DOMParser always emits a <head>
@@ -3165,24 +3197,29 @@ const summaryHitStats = useMemo(() => {
     'S-15':'尾數轉移','S-ALL':'全策略共識'
   };
 
-  // ─── 理論隨機命中概率 C(5,k)*C(34,5-k)/C(39,5) ────────
+  // ─── 理論隨機命中概率（2碼預測 vs 5碼開獎）─────────
+  // P(k hits | pick 2 from 39, draw 5)
+  // P(0) = C(34,2)/C(39,2) ≈ 0.757
+  // P(1) = C(5,1)×C(34,1)/C(39,2) ≈ 0.229
+  // P(2) = C(5,2)/C(39,2) ≈ 0.0135
   function C(n,r){
     if(r<0||r>n) return 0; if(r===0||r===n) return 1;
     var res=1; for(var i=0;i<r;i++) res=res*(n-i)/(i+1); return res;
   }
   var RND_PROB={};
-  for(var _k=0;_k<=5;_k++) RND_PROB[_k]=C(5,_k)*C(34,5-_k)/C(39,5);
-  var RND_AVG=5*5/39; // 期望命中數
+  RND_PROB[0]=C(34,2)/C(39,2);
+  RND_PROB[1]=C(5,1)*C(34,1)/C(39,2);
+  RND_PROB[2]=C(5,2)/C(39,2);
+  var RND_AVG=2*5/39; // 期望命中數 ≈ 0.256
 
-  // ─── 執行回測 ─────────────────────────────────────────
+  // ─── 執行回測（2碼模式）─────────────────────────────
   function runBacktest(sid) {
     var bridge=window.__lottoSummaryBridge;
     var draws=bridge&&(bridge.draws||bridge.history);
     if(!draws||draws.length<10) return null;
     var fn=STRAT_FNS[sid]; if(!fn) return null;
 
-    var rows=[], st={t:0};
-    for(var h=0;h<=5;h++) st['h'+h]=0;
+    var rows=[], st={t:0,h0:0,h1:0,h2:0};
     var limit=Math.min(50, draws.length-5);
 
     for(var i=0;i<limit;i++){
@@ -3190,114 +3227,112 @@ const summaryHitStats = useMemo(() => {
       if(!actual.length) continue;
       var history=draws.slice(i+1);
       if(history.length<5) break;
-      var pred;
-      try{ pred=fn(history,i); } catch(e){ pred=fallback(history); }
-      if(!pred||pred.length<5) continue;
+      var pred5;
+      try{ pred5=fn(history,i); } catch(e){ pred5=fallback(history); }
+      if(!pred5||pred5.length<2) continue;
+      var pred=pred5.slice(0,2); // 取策略最高信心前2碼
       var aSet={};
       actual.forEach(function(n){ aSet[n]=1; });
       var hits=pred.filter(function(n){ return aSet[n]; }).length;
-      st.t++; st['h'+hits]++;
+      st.t++; st['h'+hits]=(st['h'+hits]||0)+1;
       rows.push({draw:draws[i],pred:pred,actual:actual,hits:hits});
     }
     return rows.length ? {rows:rows,st:st} : null;
   }
 
-  // ─── 渲染面板 ─────────────────────────────────────────
-  function pill(n, type) {
-    // type: 'gold'=預測命中, 'cyan'=實際中且被預測, null=未中
-    var bg=type==='gold'?'var(--gold)':type==='cyan'?'var(--cyan)':'rgba(255,255,255,0.08)';
-    var fg=type?'#151515':'rgba(255,255,255,0.4)';
-    var fw=type?'700':'400';
-    return '<span style="display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;font:'+fw+' 11px var(--mono);background:'+bg+';color:'+fg+';margin-right:3px;">'+(n<10?'0':'')+n+'</span>';
-  }
-
+  // ─── 渲染面板（2碼預測 vs 近期開獎）──────────────────
   function renderPanel(sid) {
     var data=runBacktest(sid);
     if(!data) return '<div style="padding:20px;color:var(--fg-3);text-align:center;">資料不足（需至少 15 期歷史資料）</div>';
     var st=data.st, rows=data.rows, t=st.t;
     if(!t) return '<div style="padding:20px;color:var(--fg-3);">資料不足</div>';
 
-    var hit1p=(t-st.h0)/t;
-    var hit2p=(st.h2+st.h3+st.h4+st.h5)/t;
-    var hit3p=(st.h3+st.h4+st.h5)/t;
-    var avgH=(st.h1+st.h2*2+st.h3*3+st.h4*4+st.h5*5)/t;
-
-    // 隨機基準
+    var hit1p=(st.h1+st.h2)/t;
+    var hit2p=st.h2/t;
+    var avgH=(st.h1+st.h2*2)/t;
     var rnd1p=1-RND_PROB[0];
-    var rnd2p=RND_PROB[2]+RND_PROB[3]+RND_PROB[4]+RND_PROB[5];
-    var rnd3p=RND_PROB[3]+RND_PROB[4]+RND_PROB[5];
+    var rnd2p=RND_PROB[2];
+    var rndAvgH=RND_AVG;
 
     function pct(v){return (v*100).toFixed(1)+'%';}
-    function badge(actual,base){
+    function diff(actual,base){
       var d=(actual-base)*100;
       var col=d>0.5?'var(--cyan)':d<-0.5?'#f87171':'var(--fg-3)';
-      return '<span style="font:10px var(--mono);color:'+col+';">'+(d>0?'+':'')+d.toFixed(1)+'%</span>';
+      return '<span style="font:10px var(--mono);color:'+col+';">'+(d>0?'+':'')+d.toFixed(1)+'% vs 隨機</span>';
     }
 
     var html='';
 
-    // 4 統計卡
-    html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">';
+    // ── 統計摘要（2×2 卡片）──
+    html+='<div class="v5-stat-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px;">';
     [
-      {l:'中1碼以上',v:pct(hit1p),b:badge(hit1p,rnd1p),c:'var(--gold)'},
-      {l:'平均命中',v:avgH.toFixed(2)+' 碼',b:badge(avgH,RND_AVG),c:'var(--fg)'},
-      {l:'中2碼以上',v:pct(hit2p),b:badge(hit2p,rnd2p),c:'var(--cyan)'},
-      {l:'中3碼以上',v:pct(hit3p),b:badge(hit3p,rnd3p),c:'#a78bfa'}
+      {l:'中1碼以上',v:pct(hit1p),b:diff(hit1p,rnd1p),c:'var(--gold)'},
+      {l:'兩碼全中',v:pct(hit2p),b:diff(hit2p,rnd2p),c:'var(--cyan)'},
+      {l:'平均命中',v:avgH.toFixed(3)+' 碼',b:diff(avgH,rndAvgH),c:'var(--fg)'},
+      {l:'回測期數',v:t+'　期',b:'隨機基準 '+pct(rnd1p),c:'var(--fg-3)'}
     ].forEach(function(x){
-      html+='<div style="padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);text-align:center;">';
-      html+='<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.05em;">'+x.l+'</div>';
-      html+='<div style="font:700 17px var(--mono);color:'+x.c+';margin-top:5px;">'+x.v+'</div>';
-      html+='<div style="font:10px var(--mono);margin-top:3px;">'+x.b+' vs 隨機</div>';
+      html+='<div style="padding:14px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg-3);">';
+      html+='<div style="font:10px var(--mono);color:var(--fg-3);margin-bottom:7px;letter-spacing:0.05em;">'+x.l+'</div>';
+      html+='<div style="font:700 22px var(--mono);color:'+x.c+';line-height:1;">'+x.v+'</div>';
+      html+='<div style="margin-top:5px;font:10px var(--mono);color:var(--fg-3);">'+x.b+'</div>';
       html+='</div>';
     });
     html+='</div>';
 
-    // 命中分布（實際 vs 理論隨機）
-    html+='<div style="padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg-3);margin-bottom:14px;">';
-    html+='<div style="font:10px var(--mono);color:var(--fg-3);margin-bottom:10px;letter-spacing:0.05em;">命中分布　<span style="color:var(--gold)">▇</span> 策略實際　<span style="color:rgba(255,255,255,0.2)">▇</span> 純隨機理論（共 '+t+' 期）</div>';
-    html+='<div style="display:flex;gap:6px;align-items:flex-end;height:60px;">';
-    var maxP=0;
-    for(var h=0;h<=5;h++) maxP=Math.max(maxP,(st['h'+h]||0)/t,RND_PROB[h]);
-    for(var h=0;h<=5;h++){
-      var aP=(st['h'+h]||0)/t, rP=RND_PROB[h];
-      var aBar=Math.max(3,Math.round(aP/maxP*54));
-      var rBar=Math.max(2,Math.round(rP/maxP*54));
-      var col=h===0?'rgba(255,255,255,0.1)':h>=4?'#a78bfa':h>=2?'var(--cyan)':'var(--gold)';
-      if(h===5) col='#4ade80';
-      html+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;">';
-      html+='<div style="font:9px var(--mono);color:var(--fg-3);">'+(st['h'+h]||0)+'</div>';
-      html+='<div style="width:100%;position:relative;height:54px;display:flex;align-items:flex-end;gap:1px;">';
-      html+='<div style="flex:1;height:'+aBar+'px;background:'+col+';border-radius:2px 2px 0 0;"></div>';
-      html+='<div style="flex:1;height:'+rBar+'px;background:rgba(255,255,255,0.18);border-radius:2px 2px 0 0;"></div>';
-      html+='</div>';
-      html+='<div style="font:9px var(--mono);color:var(--fg-3);">'+h+'碼</div>';
-      html+='</div>';
-    }
-    html+='</div></div>';
-
-    // 歷史明細表
-    html+='<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;">';
-    html+='<div style="display:grid;grid-template-columns:86px 1fr 1fr 44px;background:var(--bg-3);padding:8px 12px;border-bottom:1px solid var(--line);">';
-    ['期號','預測（金=命中）','開獎（青=命中）','命中'].forEach(function(t){
-      html+='<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.04em;">'+t+'</div>';
+    // ── 近期開獎歷史比對表 ──
+    html+='<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;">';
+    // 表頭
+    html+='<div class="v5-grid" style="display:grid;grid-template-columns:72px 72px 1fr 44px;padding:10px 14px;background:var(--bg-3);border-bottom:1px solid var(--line);">';
+    ['期號','預測 2 碼','近期開獎 5 碼','命中'].forEach(function(h){
+      html+='<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.05em;">'+h+'</div>';
     });
     html+='</div>';
-    html+='<div style="max-height:320px;overflow-y:auto;">';
-    rows.slice(0,50).forEach(function(r,i){
-      var aSet={}, pSet={};
+
+    html+='<div style="max-height:540px;overflow-y:auto;">';
+    rows.forEach(function(r,i){
+      var aSet={},pSet={};
       r.actual.forEach(function(n){ aSet[n]=1; });
       r.pred.forEach(function(n){ pSet[n]=1; });
-      var hCol=r.hits===0?'rgba(255,255,255,0.3)':r.hits>=4?'#a78bfa':r.hits>=2?'var(--cyan)':'var(--gold)';
-      var bg=i%2===0?'transparent':'rgba(255,255,255,0.015)';
+
+      var isRecent=(i<10);
+      var hitCol=r.hits===0?'rgba(255,255,255,0.22)':r.hits===2?'var(--cyan)':'var(--gold)';
+      var rowBg=i%2===0?'transparent':'rgba(255,255,255,0.012)';
+      var sepStyle=(i===10)?'border-top:2px solid rgba(255,255,255,0.12);':'';
+      var ballSz=isRecent?'28':'21';
+      var ballFs=isRecent?'13':'10';
+      var actSz=isRecent?'25':'19';
+      var actFs=isRecent?'11':'9';
+      var pad=isRecent?'10px 14px':'6px 14px';
       var drawId=r.draw.draw||r.draw.id||r.draw.date||'';
-      html+='<div style="display:grid;grid-template-columns:86px 1fr 1fr 44px;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.04);align-items:center;background:'+bg+';">';
-      html+='<div style="font:11px var(--mono);color:var(--fg-3);white-space:nowrap;">'+drawId+'</div>';
-      html+='<div>'+r.pred.map(function(n){return pill(n,aSet[n]?'gold':null);}).join('')+'</div>';
-      html+='<div>'+r.actual.map(function(n){return pill(n,pSet[n]?'cyan':null);}).join('')+'</div>';
-      html+='<div style="text-align:center;font:700 12px var(--mono);color:'+hCol+';">'+r.hits+'/5</div>';
+      var drawDate=r.draw.dateLabel||r.draw.dateIso||'';
+      var label=drawDate||drawId;
+
+      html+='<div class="v5-grid" style="display:grid;grid-template-columns:72px 72px 1fr 44px;padding:'+pad+';align-items:center;background:'+rowBg+';'+sepStyle+'">';
+      // 期號
+      html+='<div style="font:10px var(--mono);color:var(--fg-3);word-break:break-all;line-height:1.4;">'+label+'</div>';
+      // 預測2碼
+      html+='<div style="display:flex;gap:3px;flex-wrap:wrap;">';
+      r.pred.forEach(function(n){
+        var hit=!!aSet[n];
+        html+='<span style="display:inline-flex;align-items:center;justify-content:center;width:'+ballSz+'px;height:'+ballSz+'px;border-radius:50%;background:'+(hit?'var(--gold)':'rgba(255,255,255,0.1)')+';color:'+(hit?'#141414':'rgba(255,255,255,0.45)')+';font:'+(hit?'700':'400')+' '+ballFs+'px var(--mono);">'+(n<10?'0':'')+n+'</span>';
+      });
+      html+='</div>';
+      // 實際5碼
+      html+='<div style="display:flex;gap:3px;flex-wrap:wrap;">';
+      r.actual.forEach(function(n){
+        var hit=!!pSet[n];
+        html+='<span style="display:inline-flex;align-items:center;justify-content:center;width:'+actSz+'px;height:'+actSz+'px;border-radius:50%;background:'+(hit?'rgba(100,210,200,0.85)':'rgba(255,255,255,0.07)')+';color:'+(hit?'#141414':'rgba(255,255,255,0.38)')+';font:'+(hit?'700':'400')+' '+actFs+'px var(--mono);">'+(n<10?'0':'')+n+'</span>';
+      });
+      html+='</div>';
+      // 命中
+      html+='<div style="text-align:center;font:700 '+(isRecent?'16':'12')+'px var(--mono);color:'+hitCol+';">'+r.hits+'/2</div>';
       html+='</div>';
     });
     html+='</div></div>';
+
+    html+='<div style="margin-top:8px;font:9px var(--mono);color:var(--fg-3);text-align:center;">'+
+      '金球=預測命中　青球=實際開獎且命中　上方 10 期字體較大為近期開獎　共 '+t+' 期回測'+
+    '</div>';
     return html;
   }
 
@@ -3568,9 +3603,9 @@ const summaryHitStats = useMemo(() => {
         var data = ENG.runBT(sid);
         if (!data||!data.st||!data.st.t) return;
         var st = data.st, t = st.t;
-        var avg = (st.h1+st.h2*2+st.h3*3+st.h4*4+st.h5*5)/t;
-        var hit1p = (t-st.h0)/t;
-        var hit2p = (st.h2+st.h3+st.h4+st.h5)/t;
+        var avg = (st.h1+st.h2*2)/t;        // 2碼模式
+        var hit1p = (st.h1+st.h2)/t;
+        var hit2p = st.h2/t;                 // 兩碼全中
         results.push({sid:sid, name:ENG.names[sid]||sid, avg:avg, hit1p:hit1p, hit2p:hit2p, t:t});
       } catch(e){}
     });
@@ -3578,9 +3613,9 @@ const summaryHitStats = useMemo(() => {
     if (!results.length) return '';
     results.sort(function(a,b){ return b.avg-a.avg; });
 
-    var rndAvg = ENG.rndAvg || (5*5/39);
-    var rnd1p  = ENG.rndProb ? 1-ENG.rndProb[0] : 0.53;
-    var rnd2p  = ENG.rndProb ? ENG.rndProb[2]+ENG.rndProb[3]+ENG.rndProb[4]+ENG.rndProb[5] : 0.23;
+    var rndAvg = ENG.rndAvg || (2*5/39);   // 2碼期望命中 ≈ 0.256
+    var rnd1p  = ENG.rndProb ? 1-ENG.rndProb[0] : 0.243;
+    var rnd2p  = ENG.rndProb ? ENG.rndProb[2] : 0.0135; // 兩碼全中
 
     function diffBadge(v, base) {
       var d = (v-base)*100;
@@ -3597,7 +3632,7 @@ const summaryHitStats = useMemo(() => {
 
     // 表頭（隨機基準列）
     html += '<div style="display:grid;grid-template-columns:28px 1fr 70px 70px 70px;padding:7px 14px;background:var(--bg-3);border-bottom:1px solid var(--line);">';
-    ['','策略','平均命中','中1碼以上','中2碼以上'].forEach(function(h){
+    ['','策略','平均命中','中1碼+','兩碼全中'].forEach(function(h){
       html += '<div style="font:9px var(--mono);color:var(--fg-3);letter-spacing:0.04em;">'+h+'</div>';
     });
     html += '</div>';
@@ -3661,6 +3696,239 @@ const summaryHitStats = useMemo(() => {
   setInterval(function() {
     if (ENG) buildAll();
   }, 10000);
+
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════
+     v5：2碼號碼、清理版面、強化追蹤器、手機優化
+════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  var busy = false;
+  var _timer = null;
+
+  /* ── 1. 隱藏綜合摘要 ── */
+  function hideSummary() {
+    document.querySelectorAll('.card').forEach(function(c) {
+      if (c.getAttribute('data-v5h')) return;
+      var txt = c.textContent || '';
+      if (txt.includes('TOP 2 CONSENSUS') || txt.includes('綜合摘要')) {
+        c.style.setProperty('display','none','important');
+        c.setAttribute('data-v5h','1');
+      }
+    });
+  }
+
+  /* ── 2. 移除最近10期回測明細 ── */
+  function removeDetail() {
+    var headers = document.querySelectorAll('div,h3,h4,span');
+    headers.forEach(function(el) {
+      if (el.getAttribute('data-v5r')) return;
+      var txt = (el.textContent || '').trim();
+      if (txt === '最近 10 期回測明細' || txt === '最近回測明細') {
+        el.setAttribute('data-v5r','1');
+        // 找到最近的有邊框的容器並隱藏
+        var up = el.parentElement;
+        for (var k=0; k<4 && up && up !== document.body; k++) {
+          var s = up.getAttribute('style') || '';
+          if (s.includes('border') && s.includes('1px')) {
+            up.style.setProperty('display','none','important');
+            break;
+          }
+          up = up.parentElement;
+        }
+      }
+    });
+  }
+
+  /* ── 3. 策略卡片只顯示前2個預測號碼 ── */
+  function limitPills() {
+    document.querySelectorAll('.card').forEach(function(card) {
+      if (card.getAttribute('data-v5p')) return;
+      var hdr = card.querySelector('.card-h');
+      if (!hdr || !/S-\d{2}/.test(hdr.textContent || '')) return;
+
+      // 找到含有 3+ 個 .markov-pill.hot 的 flex 容器
+      var processed = false;
+      card.querySelectorAll('div,span').forEach(function(el) {
+        var s = el.style || {};
+        var isFlexWrap = (el.getAttribute('style') || '').includes('flex-wrap');
+        if (!isFlexWrap) return;
+        var hotPills = Array.from(el.querySelectorAll('.markov-pill.hot'));
+        if (hotPills.length < 3) return;
+        hotPills.forEach(function(pill, idx) {
+          if (idx >= 2) pill.style.setProperty('display','none','important');
+          else {
+            // 讓保留的兩顆球更大更醒目
+            pill.classList.add('markov-pill');
+            pill.style.width = '34px';
+            pill.style.height = '34px';
+            pill.style.lineHeight = '34px';
+            pill.style.fontSize = '14px';
+            pill.style.fontWeight = '700';
+          }
+        });
+        processed = true;
+      });
+      if (processed) card.setAttribute('data-v5p','1');
+    });
+  }
+
+  /* ── 4. 重建策略命中率追蹤（使用 v3 引擎 2碼統計）── */
+  function rebuildTracker() {
+    var eng = window.__lottoEngine;
+    if (!eng || !eng.runBT) return;
+
+    var card = Array.from(document.querySelectorAll('.card')).find(function(c) {
+      return (c.textContent || '').includes('策略命中率追蹤');
+    });
+    if (!card) return;
+
+    var cardB = card.querySelector('.card-b');
+    if (!cardB) return;
+
+    // 若已建過且內容不變，跳過
+    if (card.getAttribute('data-v5t') === 'done') return;
+
+    var sids = ['S-01','S-02','S-03','S-04','S-05','S-06','S-07',
+                'S-08','S-11','S-12','S-13','S-14','S-15','S-ALL'];
+    var res = [];
+    sids.forEach(function(sid) {
+      try {
+        var d = eng.runBT(sid);
+        if (!d || !d.st || !d.st.t) return;
+        var st = d.st, t = st.t;
+        res.push({
+          sid: sid,
+          name: (eng.names && eng.names[sid]) || sid,
+          avg: (st.h1 + st.h2*2) / t,
+          h1p: (st.h1 + st.h2) / t,
+          h2p: st.h2 / t,
+          t: t
+        });
+      } catch(e) {}
+    });
+
+    if (!res.length) return;
+    card.setAttribute('data-v5t','done');
+
+    res.sort(function(a,b){ return b.avg - a.avg; });
+
+    var rnd1p = eng.rndProb ? 1 - eng.rndProb[0] : 0.243;
+    var rnd2p = eng.rndProb ? eng.rndProb[2] : 0.0135;
+    var rndAvg = eng.rndAvg || (2*5/39);
+
+    function pct(v){ return (v*100).toFixed(1)+'%'; }
+    function badge(v, base) {
+      var d = (v-base)*100;
+      var c = d>0.3?'#5ae0b0':d<-0.3?'#f87171':'rgba(255,255,255,0.35)';
+      return '<span style="font:10px var(--mono);color:'+c+';">'+(d>=0?'+':'')+d.toFixed(1)+'%</span>';
+    }
+
+    var html = '';
+
+    // 說明列
+    html += '<div style="font:10px var(--mono);color:var(--fg-3);margin-bottom:12px;line-height:1.6;">';
+    html += '2碼預測 · 隨機基準：中1碼+ '+pct(rnd1p)+'　兩碼全中 '+pct(rnd2p)+'　期望命中 '+rndAvg.toFixed(3)+'</div>';
+
+    // 表格
+    html += '<div style="border:1px solid var(--line);border-radius:14px;overflow:hidden;">';
+
+    // 表頭
+    html += '<div style="display:grid;grid-template-columns:28px minmax(0,1fr) 72px 72px 72px;padding:10px 16px;background:var(--bg-3);border-bottom:1px solid var(--line);" class="__v5_tracker_head">';
+    ['','策略','中1碼+','兩碼全中','平均命中'].forEach(function(h){
+      html += '<div class="__v5_tracker_head" style="font:700 10px var(--mono);color:var(--fg-3);letter-spacing:0.06em;">'+h+'</div>';
+    });
+    html += '</div>';
+
+    // 隨機基準行
+    html += '<div style="display:grid;grid-template-columns:28px minmax(0,1fr) 72px 72px 72px;padding:10px 16px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.06);">';
+    html += '<div style="font:11px var(--mono);color:var(--fg-3);">—</div>';
+    html += '<div><span style="font:11px var(--mono);color:var(--fg-3);">純隨機基準</span></div>';
+    html += '<div style="font:11px var(--mono);color:var(--fg-3);">'+pct(rnd1p)+'</div>';
+    html += '<div style="font:11px var(--mono);color:var(--fg-3);">'+pct(rnd2p)+'</div>';
+    html += '<div style="font:11px var(--mono);color:var(--fg-3);">'+rndAvg.toFixed(3)+'</div>';
+    html += '</div>';
+
+    // 各策略行
+    res.forEach(function(r, idx) {
+      var medal = idx===0?'🥇':idx===1?'🥈':idx===2?'🥉':'';
+      var nameCol = idx<3?'var(--gold)':idx<7?'var(--fg)':'var(--fg-2)';
+      var beatBase = r.avg > rndAvg*1.02;
+      var rowBg = idx%2===0?'transparent':'rgba(255,255,255,0.012)';
+      html += '<div class="__v5_tracker_row __v4_rank_row" data-sid="'+r.sid+'" ';
+      html += 'style="display:grid;grid-template-columns:28px minmax(0,1fr) 72px 72px 72px;background:'+rowBg+';cursor:pointer;">';
+      html += '<div style="font:13px;line-height:1;">'+(medal||('<span style="font:11px var(--mono);color:var(--fg-3);">'+(idx+1)+'</span>'))+'</div>';
+      html += '<div>';
+      html += '<div class="__v5_tracker_sid">'+r.sid+'</div>';
+      html += '<div class="__v5_tracker_name">'+r.name+'</div>';
+      html += '</div>';
+      html += '<div>';
+      html += '<div class="__v5_tracker_stat" style="color:'+(r.h1p>=rnd1p*1.05?'var(--gold)':'var(--fg)')+';">'+pct(r.h1p)+'</div>';
+      html += '<div class="__v5_tracker_diff">'+badge(r.h1p,rnd1p)+'</div>';
+      html += '</div>';
+      html += '<div>';
+      html += '<div class="__v5_tracker_stat" style="color:'+(r.h2p>=rnd2p*1.5?'var(--cyan)':'var(--fg)')+';">'+pct(r.h2p)+'</div>';
+      html += '<div class="__v5_tracker_diff">'+badge(r.h2p,rnd2p)+'</div>';
+      html += '</div>';
+      html += '<div>';
+      html += '<div class="__v5_tracker_stat" style="color:'+(beatBase?'var(--gold)':'var(--fg)')+';">'+r.avg.toFixed(3)+'</div>';
+      html += '<div class="__v5_tracker_diff">'+badge(r.avg,rndAvg)+'</div>';
+      html += '</div>';
+      html += '</div>';
+    });
+
+    html += '</div>';
+    html += '<div style="margin-top:10px;font:9px var(--mono);color:var(--fg-3);">點擊策略列 → 展開近期開獎歷史比對</div>';
+
+    cardB.innerHTML = html;
+
+    // 讓排行榜列也能展開回測
+    cardB.querySelectorAll('.__v4_rank_row[data-sid]').forEach(function(row) {
+      row.addEventListener('click', function() {
+        var sid = row.getAttribute('data-sid');
+        if (sid && window.__lottoShowPanel) window.__lottoShowPanel(sid);
+      });
+    });
+  }
+
+  /* ── 主執行 ── */
+  function applyAll() {
+    if (busy) return;
+    busy = true;
+    try {
+      hideSummary();
+      removeDetail();
+      limitPills();
+      rebuildTracker();
+    } catch(e) {}
+    busy = false;
+  }
+
+  /* ── MutationObserver（React 重渲後重新套用）── */
+  var mo = new MutationObserver(function(muts) {
+    var hasNew = muts.some(function(m){ return m.addedNodes.length>0; });
+    if (!hasNew) return;
+    // 若 tracker 被 React 覆蓋，清掉 flag 讓它重建
+    var c = Array.from(document.querySelectorAll('.card')).find(function(x){
+      return (x.textContent||'').includes('策略命中率追蹤');
+    });
+    if (c && c.getAttribute('data-v5t')==='done') {
+      var b = c.querySelector('.card-b');
+      if (b && !b.querySelector('.__v5_tracker_head')) {
+        c.removeAttribute('data-v5t');
+      }
+    }
+    if (_timer) clearTimeout(_timer);
+    _timer = setTimeout(applyAll, 350);
+  });
+  mo.observe(document.documentElement, {childList:true, subtree:true});
+
+  // 初始執行
+  [1000, 2200, 4000, 7000].forEach(function(d){ setTimeout(applyAll, d); });
 
 })();
 </script>
