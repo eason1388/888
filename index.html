@@ -2220,6 +2220,27 @@ const summaryHitStats = useMemo(() => {
         max-width: 300px !important;
         word-break: break-all !important;
       }
+      /* ═══ 進化 v4 ═══ */
+      .strategy > * { transition:transform 0.18s ease,box-shadow 0.18s ease !important; }
+      .strategy > *:hover { transform:translateY(-2px) scale(1.01) !important; box-shadow:0 6px 22px rgba(0,0,0,0.4) !important; }
+      .__v4_bigball { display:inline-flex !important; align-items:center !important; justify-content:center !important;
+        width:42px !important; height:42px !important; border-radius:50% !important;
+        font:700 15px var(--mono) !important; margin:0 4px !important;
+        transition:transform 0.15s ease,box-shadow 0.15s ease !important; cursor:default !important; }
+      .__v4_bigball:hover { transform:scale(1.14) !important; }
+      .__v4_bigball.consensus { background:var(--gold) !important; color:#141414 !important;
+        box-shadow:0 3px 14px rgba(217,164,65,0.5) !important; }
+      .__v4_bigball.partial { background:rgba(217,164,65,0.2) !important; color:var(--gold) !important;
+        border:1px solid rgba(217,164,65,0.4) !important; }
+      .__v4_hm_ball { display:inline-flex !important; align-items:center !important; justify-content:center !important;
+        width:30px !important; height:30px !important; border-radius:8px !important;
+        font:11px var(--mono) !important; transition:transform 0.12s ease !important;
+        cursor:default !important; position:relative !important; }
+      .__v4_hm_ball:hover { transform:scale(1.22) !important; z-index:2 !important; }
+      .__v4_rank_row { transition:background 0.15s ease !important; cursor:pointer !important; }
+      .__v4_rank_row:hover { background:rgba(255,255,255,0.04) !important; }
+      @keyframes __v4_slide { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+      .__v4_slide { animation:__v4_slide 0.35s ease both !important; }
     </style>`;
     // Inject after <head> so the DOCTYPE stays first; prepending the script
     // would push the parser into quirks mode. DOMParser always emits a <head>
@@ -3345,6 +3366,301 @@ const summaryHitStats = useMemo(() => {
       }
     }
   }, 2500);
+
+  // 暴露引擎供其他腳本使用
+  window.__lottoEngine = {
+    fns: STRAT_FNS, names: NAMES,
+    runBT: runBacktest, rndProb: RND_PROB, rndAvg: RND_AVG
+  };
+  window.__lottoShowPanel = showPanel;
+
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════
+     v4 進化：今日預測 + 熱力圖 + 策略排行榜 + UI 升級
+════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  var ENG = null;
+
+  function waitEng(cb, tries) {
+    tries = tries || 0;
+    if (tries > 40) return;
+    if (window.__lottoEngine && window.__lottoEngine.fns) {
+      ENG = window.__lottoEngine; cb();
+    } else {
+      setTimeout(function(){ waitEng(cb, tries+1); }, 300);
+    }
+  }
+
+  function getNums(d) {
+    if (!d) return [];
+    var n = d.nums||d.numbers||d.picks||d.balls||[];
+    return Array.isArray(n) ? n.slice() : [];
+  }
+
+  function getDraws() {
+    var b = window.__lottoSummaryBridge;
+    return (b && (b.draws||b.history)) || [];
+  }
+
+  // ─── 今日預測面板 ────────────────────────────────────
+  function buildTodayPanel() {
+    var draws = getDraws();
+    if (draws.length < 5) return;
+    var history = draws.slice(1);
+
+    // 收集所有策略投票
+    var votes = {};
+    for (var i = 1; i <= 39; i++) votes[i] = 0;
+    var totalStrats = 0;
+
+    Object.keys(ENG.fns).forEach(function(sid){
+      if (sid === 'S-ALL') return;
+      try {
+        var pred = ENG.fns[sid](history, 0);
+        if (pred && pred.length === 5) {
+          totalStrats++;
+          pred.forEach(function(n){ votes[n]++; });
+        }
+      } catch(e){}
+    });
+
+    // 全策略共識結果
+    var ensemble = ENG.fns['S-ALL'] ? ENG.fns['S-ALL'](history, 0) : [];
+
+    // 按票數排序
+    var sorted = [];
+    for (var i = 1; i <= 39; i++) sorted.push({n:i, v:votes[i]});
+    sorted.sort(function(a,b){ return b.v-a.v; });
+
+    var lastNums = getNums(draws[0]);
+    var lastId = draws[0] && (draws[0].draw||draws[0].id||draws[0].date||'');
+
+    function bigBall(n) {
+      var v = votes[n];
+      var cls = v >= totalStrats*0.6 ? 'consensus' : v >= totalStrats*0.3 ? 'partial' : '';
+      return '<span class="__v4_bigball '+cls+'" title="'+v+'/'+totalStrats+' 策略支持">'+(n<10?'0':'')+n+'</span>';
+    }
+
+    var html = '<div class="__v4_slide" style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px;">';
+
+    // 標題
+    html += '<div class="card-h" style="padding:11px 16px;display:flex;align-items:center;gap:8px;">';
+    html += '<span style="font:600 13px var(--mono);">今日推薦號碼</span>';
+    html += '<span style="font:9px var(--mono);color:var(--fg-3);">'+totalStrats+' 策略共識投票</span>';
+    if (lastId) {
+      html += '<span style="margin-left:auto;font:9px var(--mono);color:var(--fg-3);">上期 '+lastId+'　';
+      lastNums.forEach(function(n){ html += '<span style="display:inline-block;width:20px;text-align:center;font:700 10px var(--mono);color:rgba(255,255,255,0.5);">'+(n<10?'0':'')+n+'</span>'; });
+      html += '</span>';
+    }
+    html += '</div>';
+
+    html += '<div style="padding:16px 16px 14px;">';
+
+    // 共識5碼
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">';
+    html += '<span style="font:9px var(--mono);color:var(--fg-3);min-width:52px;line-height:1.3;">共識<br>推薦</span>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:2px;">';
+    (ensemble.length ? ensemble : sorted.slice(0,5).map(function(x){return x.n;})).forEach(function(n){ html += bigBall(n); });
+    html += '</div>';
+    html += '<span style="font:9px var(--mono);color:var(--fg-3);">金=≥60%策略　框=≥30%策略</span>';
+    html += '</div>';
+
+    // 候選熱區（票數≥2的號碼）
+    var candidates = sorted.filter(function(x){ return x.v >= 2; });
+    if (candidates.length > 0) {
+      html += '<div style="padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);">';
+      html += '<div style="font:9px var(--mono);color:var(--fg-3);margin-bottom:8px;">多策略候補 '+candidates.length+' 個（顏色越深 = 票數越多）</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+      candidates.forEach(function(x){
+        var t = x.v / totalStrats;
+        var op = 0.25 + t * 0.75;
+        var fg = t > 0.55 ? '#141414' : 'var(--gold)';
+        var fw = t > 0.4 ? '700' : '400';
+        html += '<span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;background:rgba(217,164,65,'+op+');color:'+fg+';font:'+fw+' 11px var(--mono);" title="'+x.v+'/'+totalStrats+' 票">'+(x.n<10?'0':'')+x.n+'</span>';
+      });
+      html += '</div></div>';
+    }
+
+    html += '</div></div>';
+
+    var existing = document.getElementById('__lotto_today_v4');
+    if (existing) { existing.innerHTML = html; return; }
+    var el = document.createElement('div');
+    el.id = '__lotto_today_v4';
+    el.innerHTML = html;
+
+    var grid = document.querySelector('.grid');
+    if (grid) grid.insertAdjacentElement('beforebegin', el);
+    else document.body.appendChild(el);
+  }
+
+  // ─── 號碼熱力圖 ──────────────────────────────────────
+  function buildHeatMap() {
+    var draws = getDraws();
+    if (draws.length < 5) return '';
+
+    // EWMA α=0.15 計算每號溫度
+    var alpha = 0.15;
+    var ema = {};
+    for (var i = 1; i <= 39; i++) ema[i] = 5/39;
+    var hist = draws.slice(0, Math.min(draws.length, 150)).reverse();
+    hist.forEach(function(d){
+      var set = {};
+      getNums(d).forEach(function(n){ set[n]=1; });
+      for (var i = 1; i <= 39; i++) ema[i] = alpha*(set[i]?1:0)+(1-alpha)*ema[i];
+    });
+
+    var vals = []; for (var i=1;i<=39;i++) vals.push(ema[i]);
+    var mn = Math.min.apply(null,vals), mx = Math.max.apply(null,vals);
+
+    var lastSet = {};
+    getNums(draws[0]).forEach(function(n){ lastSet[n]=1; });
+
+    var html = '<div class="__v4_slide" style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:14px;">';
+    html += '<div class="card-h" style="padding:10px 14px;display:flex;align-items:center;gap:8px;">';
+    html += '<span style="font:600 12px var(--mono);">號碼熱力圖</span>';
+    html += '<span style="font:9px var(--mono);color:var(--fg-3);">EWMA α=0.15 · '+Math.min(draws.length,150)+'期</span>';
+    html += '<span style="margin-left:auto;font:9px var(--mono);color:var(--fg-3);">冷 <span style="color:rgba(99,179,237,0.8)">●</span> → 熱 <span style="color:var(--gold)">●</span>　白框=上期開獎</span>';
+    html += '</div>';
+    html += '<div style="padding:12px 14px;">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+
+    for (var i = 1; i <= 39; i++) {
+      var t = mx > mn ? (ema[i]-mn)/(mx-mn) : 0.5;
+      var isLast = !!lastSet[i];
+      var r,g,b;
+      if (t >= 0.5) {
+        var p = (t-0.5)/0.5;
+        r = Math.round(60+p*(217-60)); g = Math.round(60+p*(164-60)); b = Math.round(60+p*(65-60));
+      } else {
+        var p = t/0.5;
+        r = Math.round(30+p*30); g = Math.round(90-p*30); b = Math.round(160-p*100);
+      }
+      var bg = 'rgba('+r+','+g+','+b+','+(0.55+t*0.45)+')';
+      var fg = t>0.65?'#141414':t<0.3?'rgba(180,220,255,0.9)':'rgba(255,255,255,0.75)';
+      var border = isLast ? 'border:2px solid rgba(255,255,255,0.65) !important;' : '';
+      var temp = Math.round(t*100);
+      html += '<span class="__v4_hm_ball" style="background:'+bg+';color:'+fg+';'+border+'" title="'+(i<10?'0':'')+i+' 熱度'+temp+'%">'+(i<10?'0':'')+i+'</span>';
+    }
+
+    html += '</div>';
+    html += '<div style="margin-top:10px;display:flex;align-items:center;gap:6px;">';
+    html += '<span style="font:9px var(--mono);color:var(--fg-3);">冷</span>';
+    html += '<div style="flex:1;max-width:160px;height:5px;border-radius:3px;background:linear-gradient(90deg,rgba(30,90,160,0.7) 0%,rgba(60,60,60,0.6) 50%,rgba(217,164,65,0.9) 100%);"></div>';
+    html += '<span style="font:9px var(--mono);color:var(--fg-3);">熱</span>';
+    html += '<span style="margin-left:auto;font:9px var(--mono);color:var(--fg-3);">Hover 查看熱度%</span>';
+    html += '</div>';
+    html += '</div></div>';
+    return html;
+  }
+
+  // ─── 策略排行榜 ──────────────────────────────────────
+  function buildLeaderboard() {
+    var results = [];
+
+    Object.keys(ENG.fns).forEach(function(sid){
+      try {
+        var data = ENG.runBT(sid);
+        if (!data||!data.st||!data.st.t) return;
+        var st = data.st, t = st.t;
+        var avg = (st.h1+st.h2*2+st.h3*3+st.h4*4+st.h5*5)/t;
+        var hit1p = (t-st.h0)/t;
+        var hit2p = (st.h2+st.h3+st.h4+st.h5)/t;
+        results.push({sid:sid, name:ENG.names[sid]||sid, avg:avg, hit1p:hit1p, hit2p:hit2p, t:t});
+      } catch(e){}
+    });
+
+    if (!results.length) return '';
+    results.sort(function(a,b){ return b.avg-a.avg; });
+
+    var rndAvg = ENG.rndAvg || (5*5/39);
+    var rnd1p  = ENG.rndProb ? 1-ENG.rndProb[0] : 0.53;
+    var rnd2p  = ENG.rndProb ? ENG.rndProb[2]+ENG.rndProb[3]+ENG.rndProb[4]+ENG.rndProb[5] : 0.23;
+
+    function diffBadge(v, base) {
+      var d = (v-base)*100;
+      var col = d>0.5?'var(--cyan)':d<-0.5?'#f87171':'var(--fg-3)';
+      return '<span style="font:9px var(--mono);color:'+col+';">'+(d>0?'+':'')+d.toFixed(1)+'%</span>';
+    }
+
+    var html = '<div class="__v4_slide" style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:14px;">';
+    html += '<div class="card-h" style="padding:10px 14px;display:flex;align-items:center;gap:8px;">';
+    html += '<span style="font:600 12px var(--mono);">策略排行榜</span>';
+    html += '<span style="font:9px var(--mono);color:var(--fg-3);">50期回測 · 按平均命中排序</span>';
+    html += '<span style="margin-left:auto;font:9px var(--mono);color:rgba(255,255,255,0.25);">點擊列 → 展開詳細回測</span>';
+    html += '</div>';
+
+    // 表頭（隨機基準列）
+    html += '<div style="display:grid;grid-template-columns:28px 1fr 70px 70px 70px;padding:7px 14px;background:var(--bg-3);border-bottom:1px solid var(--line);">';
+    ['','策略','平均命中','中1碼以上','中2碼以上'].forEach(function(h){
+      html += '<div style="font:9px var(--mono);color:var(--fg-3);letter-spacing:0.04em;">'+h+'</div>';
+    });
+    html += '</div>';
+    // 隨機基準行
+    html += '<div style="display:grid;grid-template-columns:28px 1fr 70px 70px 70px;padding:6px 14px;background:rgba(255,255,255,0.025);border-bottom:1px solid var(--line);">';
+    html += '<div style="font:10px var(--mono);color:var(--fg-3);">—</div>';
+    html += '<div style="font:10px var(--mono);color:var(--fg-3);">純隨機理論基準</div>';
+    html += '<div style="font:10px var(--mono);color:var(--fg-3);">'+rndAvg.toFixed(2)+'</div>';
+    html += '<div style="font:10px var(--mono);color:var(--fg-3);">'+(rnd1p*100).toFixed(1)+'%</div>';
+    html += '<div style="font:10px var(--mono);color:var(--fg-3);">'+(rnd2p*100).toFixed(1)+'%</div>';
+    html += '</div>';
+
+    results.forEach(function(r, idx){
+      var medal = idx===0?'🥇':idx===1?'🥈':idx===2?'🥉':(idx+1)+'';
+      var nameCol = idx<3?'var(--gold)':idx<6?'var(--fg)':'var(--fg-2)';
+      html += '<div class="__v4_rank_row" data-sid="'+r.sid+'" style="display:grid;grid-template-columns:28px 1fr 70px 70px 70px;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,0.04);align-items:center;">';
+      html += '<div style="font:11px var(--mono);">'+medal+'</div>';
+      html += '<div><span style="font:700 11px var(--mono);color:'+nameCol+';">'+r.sid+'</span> <span style="font:10px var(--mono);color:var(--fg-3);">'+r.name+'</span></div>';
+      html += '<div style="font:700 12px var(--mono);color:var(--fg);">'+r.avg.toFixed(2)+' '+diffBadge(r.avg,rndAvg)+'</div>';
+      html += '<div style="font:11px var(--mono);">'+(r.hit1p*100).toFixed(1)+'% '+diffBadge(r.hit1p,rnd1p)+'</div>';
+      html += '<div style="font:11px var(--mono);">'+(r.hit2p*100).toFixed(1)+'% '+diffBadge(r.hit2p,rnd2p)+'</div>';
+      html += '</div>';
+    });
+
+    html += '</div>';
+    return html;
+  }
+
+  // ─── 注入所有元件 ────────────────────────────────────
+  function buildAll() {
+    buildTodayPanel();
+
+    var widgets = (buildHeatMap()||'') + (buildLeaderboard()||'');
+    if (!widgets) return;
+
+    var el = document.getElementById('__lotto_v4_widgets');
+    if (el) { el.innerHTML = widgets; return; }
+    el = document.createElement('div');
+    el.id = '__lotto_v4_widgets';
+    el.innerHTML = widgets;
+
+    // 插入在 backtest panel 之前，或 grid 之後
+    var bt = document.getElementById('__lotto_bt_v3');
+    var grid = document.querySelector('.grid');
+    if (bt) bt.insertAdjacentElement('beforebegin', el);
+    else if (grid) grid.insertAdjacentElement('afterend', el);
+  }
+
+  // ─── 點擊排行榜列 → 展開策略詳情 ─────────────────────
+  document.addEventListener('click', function(e) {
+    var row = e.target.closest && e.target.closest('.__v4_rank_row');
+    if (!row) return;
+    var sid = row.getAttribute('data-sid');
+    if (sid && window.__lottoShowPanel) window.__lottoShowPanel(sid);
+  });
+
+  // ─── 啟動 ────────────────────────────────────────────
+  waitEng(function() { setTimeout(buildAll, 1000); });
+
+  // 定期刷新（資料更新後重建）
+  setInterval(function() {
+    if (ENG) buildAll();
+  }, 10000);
 
 })();
 </script>
