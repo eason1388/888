@@ -2672,10 +2672,9 @@ const summaryHitStats = useMemo(() => {
         mainColumn.appendChild(detailRow);
       }
       detailRow.style.gridTemplateColumns = '1fr';
-      detailRow.innerHTML =
-        '<div class="card"><div class="card-h"><div>最近 10 期回測明細</div><div>BACKTEST</div></div><div class="card-b"><div style="font-size:10px;color:var(--fg-3);margin-bottom:8px;">直接顯示每期預測 2 碼、實際命中號碼與 0/2、1/2、2/2</div>' +
-        buildRecentHtml(recent) +
-        '</div></div>';
+      // v5: 最近 10 期回測明細已整合進各策略回測面板，此區塊不再獨立顯示
+      detailRow.innerHTML = '';
+      detailRow.style.display = 'none';
     }
 
     const input = mount.querySelector('[data-summary-start]');
@@ -3722,24 +3721,25 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 2. 移除最近10期回測明細 ── */
+  /* ── 2. 移除最近10期回測明細（來源已封堵，這是保險層）── */
   function removeDetail() {
-    var headers = document.querySelectorAll('div,h3,h4,span');
-    headers.forEach(function(el) {
+    // 找所有 .card 裡 .card-h 含此文字的整個 card，直接隱藏
+    document.querySelectorAll('.card').forEach(function(card) {
+      if (card.getAttribute('data-v5r')) return;
+      var h = card.querySelector('.card-h');
+      if (h && (h.textContent || '').includes('最近 10 期回測明細')) {
+        card.style.setProperty('display', 'none', 'important');
+        card.setAttribute('data-v5r', '1');
+      }
+    });
+    // 也隱藏 detailRow 等非 .card 包裝的區塊
+    document.querySelectorAll('[style]').forEach(function(el) {
       if (el.getAttribute('data-v5r')) return;
-      var txt = (el.textContent || '').trim();
-      if (txt === '最近 10 期回測明細' || txt === '最近回測明細') {
-        el.setAttribute('data-v5r','1');
-        // 找到最近的有邊框的容器並隱藏
-        var up = el.parentElement;
-        for (var k=0; k<4 && up && up !== document.body; k++) {
-          var s = up.getAttribute('style') || '';
-          if (s.includes('border') && s.includes('1px')) {
-            up.style.setProperty('display','none','important');
-            break;
-          }
-          up = up.parentElement;
-        }
+      if (el.children.length < 1) return;
+      var h2 = el.querySelector('.card-h, [class*="card-h"]');
+      if (h2 && (h2.textContent || '').includes('最近 10 期回測明細')) {
+        el.style.setProperty('display', 'none', 'important');
+        el.setAttribute('data-v5r', '1');
       }
     });
   }
@@ -3964,7 +3964,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v5.2';
+  var V5_VERSION = 'v5.3';
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
     var badge = document.createElement('div');
