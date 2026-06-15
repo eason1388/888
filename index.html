@@ -3951,22 +3951,201 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v6.1';
-
+  var V5_VERSION = 'v7.0';
   /* ══════════════════════════════════════════════════════════
-     buildPowerPanel() v6.1
-     ─────────────────────────────────────────────────────────
-     修正：card-b 隱藏與面板建立分離
-       每次呼叫都隱藏 card-b（防止 React 重渲後復活）
-       只有當 #__v5_pp 不在 predCard 裡才重建面板
+     v7.0 完整重設計
+     ────────────────────────────────────────────────────────
+     架構：3 個獨立函式，各司其職
+       v7_injectCSS()      → 用 stylesheet 永久隱藏 card-b（React 無法覆蓋）
+       v7_computeTopTwo()  → 加權共識演算法（動態偵測所有策略）
+       v7_buildPanel()     → 建立大字清晰面板，只在需要時重建
 
-     演算法：加權共識
-       weight_i = max(0, hitRate_i − randomBaseline)
-       score_n  = Σ weight_i × (5 − rank) / 5
-       取 score 最高的 2 個號碼
+     CSS 方案根本解決 card-b 復活問題：
+       React 只能重設它自己管理的 DOM 節點的 style 屬性
+       但無法移除或修改我們注入的 <style> 標籤的 CSS 規則
+       因此 [data-v7] .card-b { display:none !important } 永遠有效
   ══════════════════════════════════════════════════════════ */
-  function buildPowerPanel() {
-    // ── 1. 找「下期預測號碼」card ──────────────────────────────
+
+  /* ── CSS 注入（只執行一次）────────────────────────────── */
+  function v7_injectCSS() {
+    if (document.getElementById('__v7_css')) return;
+    var s = document.createElement('style');
+    s.id = '__v7_css';
+    s.textContent = [
+      /* 標記了 data-v7 屬性的 card，其 card-b 永遠隱藏 */
+      '.card[data-v7] > .card-b { display:none !important; }',
+      /* 球彈入動畫 */
+      '@keyframes v7pop {',
+      '  from { transform:scale(0.5) translateY(20px); opacity:0; }',
+      '  to   { transform:scale(1)   translateY(0);    opacity:1; }',
+      '}',
+      '#__v7 .v7b {',
+      '  animation: v7pop 0.45s cubic-bezier(0.34,1.56,0.64,1) both;',
+      '}',
+      '#__v7 .v7b:nth-child(3) { animation-delay:0.08s; }',
+    ].join('\n');
+    document.head.appendChild(s);
+  }
+
+  /* ── 加權共識演算法 ───────────────────────────────────── */
+  function v7_computeTopTwo(eng, history) {
+    var rndAvg = eng.rndAvg || (2 * 5 / 39);
+    var scores   = {};   /* 號碼 → 加權總分 */
+    var top2hits = {};   /* 號碼 → 出現在某策略 top-2 的次數（共識加成） */
+    var validN   = 0;
+    var totalW   = 0;
+
+    /* 動態偵測所有可用策略（不再硬編碼） */
+    var sids = Object.keys(eng.fns || {});
+
+    sids.forEach(function(sid) {
+      try {
+        var bt = eng.runBT(sid);
+        if (!bt || !bt.st || !bt.st.t) return;
+
+        /* 命中率 = (h1 命中1碼 + h2*2 命中2碼) / 總期數 */
+        var rate = (bt.st.h1 + bt.st.h2 * 2) / bt.st.t;
+
+        /* 只採用優於隨機的策略 */
+        var w = Math.max(0, rate - rndAvg);
+
+        var pred = eng.fns[sid](history, 0);
+        if (!pred || !pred.length) return;
+
+        validN++;
+        if (w <= 0) return;
+
+        totalW += w;
+
+        /* 線性排名加成：rank 0(最強)→1.0，rank 4→0.2 */
+        pred.slice(0, 5).forEach(function(n, rank) {
+          scores[n] = (scores[n] || 0) + w * (5 - rank) / 5;
+        });
+
+        /* 記錄進入 top-2 的號碼（共識計數） */
+        pred.slice(0, 2).forEach(function(n) {
+          top2hits[n] = (top2hits[n] || 0) + 1;
+        });
+      } catch(e) {}
+    });
+
+    if (!totalW || !Object.keys(scores).length) return null;
+
+    /* 共識加成：被多個策略列為 top-2 的號碼，得分 +8% per 額外策略 */
+    Object.keys(top2hits).forEach(function(n) {
+      var extra = top2hits[n] - 1;   /* 超過 1 個策略才算 */
+      if (extra > 0 && scores[n]) scores[n] *= (1 + extra * 0.08);
+    });
+
+    var sorted = Object.keys(scores).map(function(n) {
+      return { n: parseInt(n), s: scores[n], con: top2hits[n] || 0 };
+    }).sort(function(a, b) { return b.s - a.s; });
+
+    if (sorted.length < 2) return null;
+    return {
+      top2:   sorted.slice(0, 2),
+      maxS:   sorted[0].s,
+      validN: validN,
+      goodN:  Object.keys(scores).length   /* 參與投票的候選號碼數 */
+    };
+  }
+
+  /* ── 建立面板 ─────────────────────────────────────────── */
+  function v7_buildPanel(predCard, res) {
+    /* 移除舊版殘留（v5/v6 的 #__v5_pp） */
+    ['__v5_pp','__v7'].forEach(function(id) {
+      var old = predCard.querySelector('#' + id);
+      if (old) old.parentNode.removeChild(old);
+    });
+
+    function fmt(n) { return String(n).padStart(2, '0'); }
+
+    var top2   = res.top2;
+    var maxS   = res.maxS;
+    var validN = res.validN;
+
+    /* 球 HTML */
+    function ballHTML(item, idx) {
+      var conf   = Math.round(item.s / maxS * 100);
+      var isGold = idx === 0;
+      var ballBg = isGold
+        ? 'radial-gradient(circle at 38% 30%, #fffac0 0%, #f9d44e 30%, #c8940a 100%)'
+        : 'radial-gradient(circle at 38% 30%, #d8eeff 0%, #80bcf0 30%, #2166b0 100%)';
+      var shadow = isGold
+        ? '0 10px 40px rgba(248,200,0,0.55), 0 3px 10px rgba(0,0,0,0.5)'
+        : '0 10px 40px rgba(40,130,210,0.45), 0 3px 10px rgba(0,0,0,0.5)';
+      var txtClr = isGold ? '#2e1900' : '#001428';
+      var accClr = isGold ? '#f9d44e' : '#80bcf0';
+      var bar    = isGold
+        ? 'linear-gradient(90deg,#f9d44e,#e6a006)'
+        : 'linear-gradient(90deg,#80bcf0,#2166b0)';
+      var rank   = isGold ? '🥇 首選號碼' : '🥈 次選號碼';
+
+      return (
+        '<div class="v7b" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:14px;">' +
+          '<div style="font:700 14px/1 var(--mono,monospace);color:' + accClr + ';letter-spacing:.04em;">' + rank + '</div>' +
+          /* 大球 */
+          '<div style="width:124px;height:124px;border-radius:50%;background:' + ballBg + ';' +
+          'display:flex;align-items:center;justify-content:center;' +
+          'font:900 46px/1 var(--mono,monospace);color:' + txtClr + ';' +
+          'box-shadow:' + shadow + ';">' + fmt(item.n) + '</div>' +
+          /* 信心條 */
+          '<div style="width:124px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">' +
+              '<span style="font:11px var(--mono,monospace);color:var(--fg-3,#888);">AI 信心</span>' +
+              '<span style="font:800 16px var(--mono,monospace);color:' + accClr + ';">' + conf + '%</span>' +
+            '</div>' +
+            '<div style="height:8px;border-radius:4px;background:rgba(255,255,255,0.1);overflow:hidden;">' +
+              '<div style="height:100%;width:' + conf + '%;background:' + bar + ';border-radius:4px;"></div>' +
+            '</div>' +
+            '<div style="margin-top:7px;font:11px var(--mono,monospace);color:var(--fg-3,#888);text-align:center;line-height:1.7;">' +
+              item.con + ' 個策略將此列為本期 TOP 2' +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }
+
+    var panel = document.createElement('div');
+    panel.id = '__v7';
+    panel.innerHTML = (
+      /* 副標題 */
+      '<div style="padding:14px 20px 0;display:flex;align-items:center;justify-content:space-between;">' +
+        '<span style="font:700 12px var(--mono,monospace);color:var(--gold,#d4a017);letter-spacing:.08em;">⚡ AI 加權共識 · 本期最強推薦</span>' +
+        '<span style="font:11px var(--mono,monospace);color:var(--fg-3,#888);">' + validN + ' 個策略參與</span>' +
+      '</div>' +
+      /* 兩顆球 */
+      '<div style="padding:26px 16px 20px;display:flex;gap:12px;align-items:flex-start;">' +
+        ballHTML(top2[0], 0) +
+        '<div style="width:1px;background:rgba(255,255,255,0.08);align-self:stretch;margin:6px 4px 18px;flex-shrink:0;"></div>' +
+        ballHTML(top2[1], 1) +
+      '</div>' +
+      /* 說明欄 */
+      '<div style="margin:0 16px 20px;padding:14px 16px;border-radius:10px;' +
+      'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">' +
+        '<div style="font:700 11px var(--mono,monospace);color:var(--fg-2,#aaa);margin-bottom:9px;letter-spacing:.06em;">📖 怎麼解讀這個預測？</div>' +
+        '<div style="font:12px/2 var(--mono,monospace);color:var(--fg-3,#888);">' +
+          '• <b style="color:var(--fg-2,#aaa)">AI 信心</b>：這個號碼比其他候選號碼強多少（越高越好）<br>' +
+          '• <b style="color:var(--fg-2,#aaa)">策略列 TOP 2</b>：幾個策略認為這是本期最值得選的號碼<br>' +
+          '• 只有歷史命中率 <b style="color:var(--gold,#d4a017)">優於純隨機</b> 的策略才能投票，劣質策略自動排除' +
+        '</div>' +
+      '</div>'
+    );
+
+    var cardH = predCard.querySelector('.card-h');
+    if (cardH) {
+      predCard.insertBefore(panel, cardH.nextSibling);
+    } else {
+      predCard.appendChild(panel);
+    }
+  }
+
+  /* ── 主入口（每次 applyAll 呼叫）───────────────────────── */
+  function v7_buildPrediction() {
+    /* Step 1：注入 CSS（永久隱藏 card-b，只做一次） */
+    v7_injectCSS();
+
+    /* Step 2：找到預測卡並標記 data-v7（React 不知道這個屬性） */
     var predCard = null;
     document.querySelectorAll('.card').forEach(function(c) {
       if (predCard) return;
@@ -3974,15 +4153,12 @@ const summaryHitStats = useMemo(() => {
       if (h && (h.textContent || '').includes('下期預測號碼')) predCard = c;
     });
     if (!predCard) return;
+    predCard.setAttribute('data-v7', '1');   /* CSS 靠這個 attr 隱藏 card-b */
 
-    // ── 2. 每次都強制隱藏 card-b（React 重渲後可能被重置）────────
-    var cardB = predCard.querySelector('.card-b');
-    if (cardB) cardB.style.setProperty('display', 'none', 'important');
+    /* Step 3：面板已存在則跳過（React 不會移除我們的 div） */
+    if (predCard.querySelector('#__v7')) return;
 
-    // ── 3. 若面板已在 predCard 裡，不重建 ────────────────────────
-    if (predCard.querySelector('#__v5_pp')) return;
-
-    // ── 4. 取引擎 & 歷史資料 ──────────────────────────────────
+    /* Step 4：取引擎 & 歷史 */
     var eng = window.__lottoEngine;
     if (!eng || !eng.fns || !eng.runBT) return;
     var draws = [];
@@ -3991,142 +4167,13 @@ const summaryHitStats = useMemo(() => {
       draws = (br && (br.draws || br.history)) || [];
     } catch(e) {}
     if (draws.length < 10) return;
-    var history = draws.slice(1);
 
-    // ── 5. 加權投票 ────────────────────────────────────────────
-    var rndAvg = eng.rndAvg || (2 * 5 / 39);
-    var scores = {}, voteCnt = {};
-    var totalW = 0, validN = 0;
-    ['S-01','S-02','S-03','S-04','S-05','S-06','S-07',
-     'S-08','S-11','S-12','S-13','S-14','S-15'].forEach(function(sid) {
-      if (!eng.fns[sid]) return;
-      try {
-        var bt = eng.runBT(sid);
-        if (!bt || !bt.st || !bt.st.t) return;
-        var avg = (bt.st.h1 + bt.st.h2 * 2) / bt.st.t;
-        var w = Math.max(0, avg - rndAvg);
-        var pred = eng.fns[sid](history, 0);
-        if (!pred || !pred.length) return;
-        validN++;
-        if (w > 0) {
-          totalW += w;
-          pred.slice(0, 5).forEach(function(n, rank) {
-            scores[n] = (scores[n] || 0) + w * (5 - rank) / 5;
-            voteCnt[n] = (voteCnt[n] || 0) + 1;
-          });
-        }
-      } catch(e) {}
-    });
-    if (!totalW || !Object.keys(scores).length) return;
+    /* Step 5：計算 */
+    var res = v7_computeTopTwo(eng, draws.slice(1));
+    if (!res) return;
 
-    var sorted = Object.keys(scores).map(function(n) {
-      return { n: parseInt(n), s: scores[n], v: voteCnt[n] || 0 };
-    }).sort(function(a, b) { return b.s - a.s; });
-    if (sorted.length < 2) return;
-
-    var top2 = sorted.slice(0, 2);
-    var maxS = sorted[0].s;
-    function fmt2(n) { return String(n).padStart(2, '0'); }
-
-    // ── 6. 計算各球信心分數 ────────────────────────────────────
-    // 信心% = 此號碼得分 / 最高得分 × 100（相對強度）
-    var stars = top2.map(function(item) {
-      var conf = Math.round(item.s / maxS * 100);
-      var sup  = Math.round(item.v / validN * 100);
-      return { num: item.n, conf: conf, sup: sup, votes: item.v };
-    });
-
-    // ── 7. 建立清晰大字面板 ────────────────────────────────────
-    var pp = document.createElement('div');
-    pp.id = '__v5_pp';
-
-    // 球 HTML
-    function makeBall(st, rank) {
-      var medal = rank === 0 ? '🥇' : '🥈';
-      var label = rank === 0 ? '首選號碼' : '次選號碼';
-      var barW  = st.conf;
-      var barClr = rank === 0
-        ? 'linear-gradient(90deg,#f7c94b,#e6a006)'
-        : 'linear-gradient(90deg,#9ecfff,#5299d3)';
-      var ballBg = rank === 0
-        ? 'radial-gradient(circle at 35% 30%,#fff3a0 0%,#f7c94b 30%,#c8950a 100%)'
-        : 'radial-gradient(circle at 35% 30%,#d4ecff 0%,#7ab8e8 30%,#2968a8 100%)';
-      var ballClr = rank === 0 ? '#3a2200' : '#001833';
-      return (
-        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:12px;padding:0 12px;">' +
-          /* 標籤 */
-          '<div style="font:600 13px/1 var(--mono);color:var(--fg-3);letter-spacing:0.06em;">' +
-            medal + '&nbsp;' + label +
-          '</div>' +
-          /* 大球 */
-          '<div style="width:110px;height:110px;border-radius:50%;' +
-          'background:' + ballBg + ';' +
-          'display:flex;align-items:center;justify-content:center;' +
-          'color:' + ballClr + ';font:900 40px/1 var(--mono);' +
-          'box-shadow:0 8px 32px rgba(0,0,0,0.5),0 2px 8px rgba(0,0,0,0.3),inset 0 -4px 8px rgba(0,0,0,0.15);">' +
-            fmt2(st.num) +
-          '</div>' +
-          /* 信心條 */
-          '<div style="width:100%;max-width:110px;">' +
-            '<div style="display:flex;justify-content:space-between;margin-bottom:5px;">' +
-              '<span style="font:11px var(--mono);color:var(--fg-3);">AI 信心</span>' +
-              '<span style="font:700 13px var(--mono);color:var(--gold);">' + st.conf + '%</span>' +
-            '</div>' +
-            '<div style="height:6px;border-radius:3px;background:rgba(255,255,255,0.08);">' +
-              '<div style="height:100%;width:' + barW + '%;border-radius:3px;background:' + barClr + ';transition:width 0.6s;"></div>' +
-            '</div>' +
-            '<div style="margin-top:6px;font:11px var(--mono);color:var(--fg-3);text-align:center;">' +
-              st.votes + '&thinsp;/&thinsp;' + validN + ' 策略支持（' + st.sup + '%）' +
-            '</div>' +
-          '</div>' +
-        '</div>'
-      );
-    }
-
-    var divider = (
-      '<div style="width:1px;background:var(--line);align-self:stretch;margin:8px 0 20px;flex-shrink:0;"></div>'
-    );
-
-    pp.innerHTML = (
-      /* ── 標題列 ── */
-      '<div style="' +
-        'padding:18px 20px 10px;' +
-        'display:flex;align-items:center;gap:8px;' +
-        'border-bottom:1px solid rgba(255,255,255,0.06);">' +
-        '<span style="font:700 13px var(--mono);color:var(--gold);letter-spacing:0.06em;">⚡ AI 加權共識預測</span>' +
-        '<span style="margin-left:auto;font:11px var(--mono);color:var(--fg-3);">' +
-          '綜合 ' + validN + ' 個策略 · 僅採納優於隨機的策略' +
-        '</span>' +
-      '</div>' +
-      /* ── 兩顆大球 ── */
-      '<div style="padding:28px 8px 20px;display:flex;align-items:flex-start;gap:0;">' +
-        makeBall(stars[0], 0) +
-        divider +
-        makeBall(stars[1], 1) +
-      '</div>' +
-      /* ── 說明文字 ── */
-      '<div style="' +
-        'margin:0 16px 20px;padding:14px 16px;' +
-        'border-radius:10px;' +
-        'background:rgba(255,255,255,0.04);' +
-        'border:1px solid rgba(255,255,255,0.07);">' +
-        '<div style="font:700 12px var(--mono);color:var(--fg-2);margin-bottom:8px;">📖 這 2 個號碼是怎麼算出來的？</div>' +
-        '<div style="font:12px/1.9 var(--mono);color:var(--fg-3);">' +
-          '系統同時運行 ' + validN + ' 個不同分析策略（馬可夫鏈、頻率、冷熱號等）<br>' +
-          '只有「歷史命中率高於純隨機」的策略才有資格投票<br>' +
-          '每個策略的票數依命中率加權，再挑出得票最高的 2 個號碼<br>' +
-          '🥇 金球 = 最強推薦　　🥈 藍球 = 次強推薦' +
-        '</div>' +
-      '</div>'
-    );
-
-    // 插入到 card-h 後面
-    var cardH = predCard.querySelector('.card-h');
-    if (cardH) {
-      predCard.insertBefore(pp, cardH.nextSibling);
-    } else {
-      predCard.appendChild(pp);
-    }
+    /* Step 6：建面板 */
+    v7_buildPanel(predCard, res);
   }
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
@@ -4159,8 +4206,8 @@ const summaryHitStats = useMemo(() => {
       injectVersionBadge();
       hideSummary();
       removeDetail();
-      buildPowerPanel();         // v6.0：加權共識演算法面板（優先）
-      limitPredictionBalls();    // v5.9：fallback
+      v7_buildPrediction();      // v7.0：CSS 永久鎖定 + 加權共識面板
+      limitPredictionBalls();    // v5.9：fallback（若 v7 未能執行）
       limitPills();
       rebuildTracker();
     } catch(e) {}
