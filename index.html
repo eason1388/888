@@ -3730,91 +3730,81 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 3a. 主預測區「下期預測號碼」直接替換為 2 顆球（v5.4：完全接管 card-b）── */
-  function replacePredictionPanel() {
-    // 若 card-b 已被我們接管，且 React 未重渲（屬性還在），則跳過
-    if (document.querySelector('.card-b[data-v5pred]')) return;
+  /* ── 3a. 主預測區只留最高機率 2 顆球（v5.7：TreeWalker 文字節點法）──
+     原 replacePredictionPanel() 失效原因：React 選號元件不是 .card/.card-h 結構，
+     函式找不到目標，靜默跳過。新方法：掃描純百分比文字節點（如 "88%"、"93%"），
+     不依賴任何 class 或 DOM 結構，React 怎麼渲染都能找到球。              ── */
+  function limitPredictionBalls() {
+    // ① 用 TreeWalker 找所有純百分比文字節點（避開 React textContent 合併問題）
+    var pctEls = [];
+    var root = document.querySelector('.grid') || document.body;
+    var tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var tn;
+    while ((tn = tw.nextNode())) {
+      var t = (tn.textContent || '').trim();
+      // 只匹配 2-3 位純數字百分比，排除 "1/39" 這類分數文字
+      if (/^\d{2,3}%$/.test(t) && tn.parentElement) {
+        pctEls.push(tn.parentElement);
+      }
+    }
+    if (pctEls.length < 4) return;
 
-    var eng = window.__lottoEngine;
-    if (!eng || !eng.fns || !eng.fns['S-ALL']) return;
+    // ② 找到把最多百分比元素聚在一起的祖先（球列容器）
+    var bestAnc = null, bestGroup = [];
+    for (var depth = 1; depth <= 7; depth++) {
+      var ancs = [];
+      pctEls.forEach(function(el) {
+        var a = el;
+        for (var d = 0; d < depth; d++) {
+          if (!a.parentElement || a.parentElement === document.body) break;
+          a = a.parentElement;
+        }
+        var entry = ancs.find(function(e) { return e.anc === a; });
+        if (entry) entry.els.push(el);
+        else ancs.push({ anc: a, els: [el] });
+      });
+      ancs.forEach(function(e) {
+        if (e.els.length > bestGroup.length) {
+          bestGroup = e.els;
+          bestAnc = e.anc;
+        }
+      });
+      if (bestGroup.length >= 4) break;
+    }
+    if (!bestAnc || bestGroup.length < 4) return;
 
-    // 取歷史開獎
-    var draws = [];
-    try {
-      var bridge = window.__lottoSummaryBridge;
-      draws = (bridge && (bridge.draws || bridge.history)) || [];
-    } catch(e) {}
-    if (draws.length < 5) return;
-    var history = draws.slice(1);
-
-    // 找到「下期預測號碼」card
-    var predCard = null;
-    document.querySelectorAll('.card').forEach(function(card) {
-      if (predCard) return;
-      var h = card.querySelector('.card-h');
-      if (h && (h.textContent || '').includes('下期預測號碼')) predCard = card;
+    // ③ 找「球單元」：bestAnc 的直接子元素中，含有百分比元素的那些
+    var ballUnits = Array.from(bestAnc.children).filter(function(child) {
+      return bestGroup.some(function(p) { return child.contains(p); });
     });
-    if (!predCard) return;
+    // 若直接子元素層太少，往下再找一層
+    if (ballUnits.length < 4) {
+      var seen = [];
+      bestGroup.forEach(function(pctEl) {
+        var u = pctEl;
+        while (u.parentElement && u.parentElement !== bestAnc) u = u.parentElement;
+        if (seen.indexOf(u) < 0) seen.push(u);
+      });
+      ballUnits = seen;
+    }
+    if (ballUnits.length < 4) return;
 
-    var cardB = predCard.querySelector('.card-b');
-    if (!cardB) return;
+    // ④ 依百分比值排序，Top 2 保留，其餘隱藏
+    var ranked = ballUnits.map(function(u) {
+      var pctEl = bestGroup.find(function(p) { return u.contains(p); });
+      return { unit: u, pct: pctEl ? parseInt(pctEl.textContent) : 0 };
+    }).sort(function(a, b) { return b.pct - a.pct; });
 
-    // S-ALL 取 Top 2
-    var picks = [];
-    try {
-      picks = (eng.fns['S-ALL'](history, 0) || []).slice(0, 2);
-    } catch(e) { return; }
-    if (picks.length < 2) return;
-
-    // 計算各策略投票支持度（在 Top 5 候選中出現算票）
-    var votes = {};
-    var total = 0;
-    var sids = ['S-01','S-02','S-03','S-04','S-05','S-06','S-07',
-                'S-08','S-11','S-12','S-13','S-14','S-15'];
-    sids.forEach(function(sid) {
-      if (!eng.fns[sid]) return;
-      try {
-        var p = eng.fns[sid](history, 0);
-        if (!p || !p.length) return;
-        total++;
-        p.slice(0,5).forEach(function(n) { votes[n] = (votes[n]||0) + 1; });
-      } catch(e) {}
+    var keepSet = new Set([ranked[0].unit, ranked[1].unit]);
+    ballUnits.forEach(function(u) {
+      if (keepSet.has(u)) {
+        u.style.removeProperty('display');
+        u.style.transform = 'scale(1.08)';
+        u.style.transition = 'transform 0.2s';
+      } else {
+        u.style.setProperty('display', 'none', 'important');
+      }
     });
-
-    function fmt(n) { return String(n).padStart(2,'0'); }
-    function pct(n) { return total ? Math.round((votes[n]||0)/total*100) : 0; }
-
-    // 接管 card-b
-    cardB.setAttribute('data-v5pred', '1');
-    cardB.innerHTML =
-      '<div style="display:flex;flex-direction:column;align-items:center;gap:20px;padding:28px 16px 22px;">' +
-        // 兩顆大球
-        '<div style="display:flex;gap:36px;align-items:flex-start;">' +
-          picks.map(function(n) {
-            var p = pct(n);
-            var vc = votes[n] || 0;
-            return (
-              '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">' +
-                '<div style="width:80px;height:80px;border-radius:50%;' +
-                'background:radial-gradient(circle at 35% 35%,#ffe06a 0%,#c8950a 100%);' +
-                'display:flex;align-items:center;justify-content:center;' +
-                'color:#1a0e00;font:800 28px/1 var(--mono);' +
-                'box-shadow:0 6px 24px rgba(212,175,55,0.55),0 2px 6px rgba(0,0,0,0.4);">' +
-                  fmt(n) +
-                '</div>' +
-                '<div style="font:700 16px var(--mono);color:var(--gold);">' + p + '%</div>' +
-                '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.04em;">' + vc + '/' + total + '&nbsp;策略</div>' +
-              '</div>'
-            );
-          }).join(
-            '<div style="width:1px;background:var(--line);align-self:stretch;margin-top:8px;"></div>'
-          ) +
-        '</div>' +
-        // 說明文字
-        '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.1em;text-align:center;line-height:1.6;">' +
-          '全策略共識 TOP 2　|　點擊下方策略卡查看個別預測' +
-        '</div>' +
-      '</div>';
   }
 
   /* ── 3b. 策略卡片只顯示前 2 個預測號碼（v5.6：標記 container 而非 card）── */
@@ -3977,7 +3967,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v5.6';
+  var V5_VERSION = 'v5.7';
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
     var badge = document.createElement('div');
@@ -4009,7 +3999,7 @@ const summaryHitStats = useMemo(() => {
       injectVersionBadge();
       hideSummary();
       removeDetail();
-      replacePredictionPanel();  // v5.4: 直接接管 card-b，比 limitMainPrediction 更可靠
+      limitPredictionBalls();    // v5.7: TreeWalker 掃百分比文字節點，不依賴 DOM 結構
       limitPills();
       rebuildTracker();
     } catch(e) {}
