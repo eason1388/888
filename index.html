@@ -3951,32 +3951,40 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v6.0';
+  var V5_VERSION = 'v6.1';
 
   /* ══════════════════════════════════════════════════════════
-     buildPowerPanel()：加權共識演算法 + 直接注入預測面板
+     buildPowerPanel() v6.1
      ─────────────────────────────────────────────────────────
-     演算法原理：
-       每個策略 i 的「有效權重」= max(0, hitRate_i - randomBaseline)
-       → 只有命中率優於隨機的策略才參與投票
-       → 命中率越高、勝出幅度越大，權重越高（獎勵強者）
-       每個號碼 n 的得分 = Σ weight_i × (5 - rank_i) / 5
-       → 策略預測排名越靠前，分數貢獻越大
-       最終取得分最高的 2 個號碼
-     注入方式：
-       找到「下期預測號碼」.card → 隱藏 React 的 .card-b
-       → 在 .card-h 後插入我們的 <div id="__v5_pp">
-       React 不管理此 div，不會被覆蓋
+     修正：card-b 隱藏與面板建立分離
+       每次呼叫都隱藏 card-b（防止 React 重渲後復活）
+       只有當 #__v5_pp 不在 predCard 裡才重建面板
+
+     演算法：加權共識
+       weight_i = max(0, hitRate_i − randomBaseline)
+       score_n  = Σ weight_i × (5 − rank) / 5
+       取 score 最高的 2 個號碼
   ══════════════════════════════════════════════════════════ */
   function buildPowerPanel() {
-    // 若已注入且仍在 DOM，跳過
-    var existing = document.getElementById('__v5_pp');
-    if (existing && document.body.contains(existing)) return;
+    // ── 1. 找「下期預測號碼」card ──────────────────────────────
+    var predCard = null;
+    document.querySelectorAll('.card').forEach(function(c) {
+      if (predCard) return;
+      var h = c.querySelector('.card-h');
+      if (h && (h.textContent || '').includes('下期預測號碼')) predCard = c;
+    });
+    if (!predCard) return;
 
+    // ── 2. 每次都強制隱藏 card-b（React 重渲後可能被重置）────────
+    var cardB = predCard.querySelector('.card-b');
+    if (cardB) cardB.style.setProperty('display', 'none', 'important');
+
+    // ── 3. 若面板已在 predCard 裡，不重建 ────────────────────────
+    if (predCard.querySelector('#__v5_pp')) return;
+
+    // ── 4. 取引擎 & 歷史資料 ──────────────────────────────────
     var eng = window.__lottoEngine;
     if (!eng || !eng.fns || !eng.runBT) return;
-
-    // 取歷史資料
     var draws = [];
     try {
       var br = window.__lottoSummaryBridge;
@@ -3985,8 +3993,8 @@ const summaryHitStats = useMemo(() => {
     if (draws.length < 10) return;
     var history = draws.slice(1);
 
-    // ── 加權投票 ──────────────────────────────────────────────
-    var rndAvg = eng.rndAvg || (2*5/39);
+    // ── 5. 加權投票 ────────────────────────────────────────────
+    var rndAvg = eng.rndAvg || (2 * 5 / 39);
     var scores = {}, voteCnt = {};
     var totalW = 0, validN = 0;
     ['S-01','S-02','S-03','S-04','S-05','S-06','S-07',
@@ -3996,7 +4004,7 @@ const summaryHitStats = useMemo(() => {
         var bt = eng.runBT(sid);
         if (!bt || !bt.st || !bt.st.t) return;
         var avg = (bt.st.h1 + bt.st.h2 * 2) / bt.st.t;
-        var w = Math.max(0, avg - rndAvg);  // 只用優於隨機的策略
+        var w = Math.max(0, avg - rndAvg);
         var pred = eng.fns[sid](history, 0);
         if (!pred || !pred.length) return;
         validN++;
@@ -4016,64 +4024,103 @@ const summaryHitStats = useMemo(() => {
     }).sort(function(a, b) { return b.s - a.s; });
     if (sorted.length < 2) return;
 
-    var top2   = sorted.slice(0, 2);
-    var maxS   = sorted[0].s;
-    function fmt(n) { return String(n).padStart(2, '0'); }
+    var top2 = sorted.slice(0, 2);
+    var maxS = sorted[0].s;
+    function fmt2(n) { return String(n).padStart(2, '0'); }
 
-    // ── 找「下期預測號碼」card ─────────────────────────────────
-    var predCard = null;
-    document.querySelectorAll('.card').forEach(function(c) {
-      if (predCard) return;
-      var h = c.querySelector('.card-h');
-      if (h && (h.textContent || '').includes('下期預測號碼')) predCard = c;
+    // ── 6. 計算各球信心分數 ────────────────────────────────────
+    // 信心% = 此號碼得分 / 最高得分 × 100（相對強度）
+    var stars = top2.map(function(item) {
+      var conf = Math.round(item.s / maxS * 100);
+      var sup  = Math.round(item.v / validN * 100);
+      return { num: item.n, conf: conf, sup: sup, votes: item.v };
     });
-    if (!predCard) return;
 
-    // 隱藏 React 的 card-b（不刪除，讓 React 繼續管理自己的節點）
-    var cardB = predCard.querySelector('.card-b');
-    if (cardB) cardB.style.setProperty('display', 'none', 'important');
-
-    // ── 建立我們的面板 ────────────────────────────────────────
+    // ── 7. 建立清晰大字面板 ────────────────────────────────────
     var pp = document.createElement('div');
     pp.id = '__v5_pp';
 
-    var ballsHtml = top2.map(function(item) {
-      var confPct    = Math.round(item.s / maxS * 100);
-      var supportPct = Math.round(item.v / validN * 100);
+    // 球 HTML
+    function makeBall(st, rank) {
+      var medal = rank === 0 ? '🥇' : '🥈';
+      var label = rank === 0 ? '首選號碼' : '次選號碼';
+      var barW  = st.conf;
+      var barClr = rank === 0
+        ? 'linear-gradient(90deg,#f7c94b,#e6a006)'
+        : 'linear-gradient(90deg,#9ecfff,#5299d3)';
+      var ballBg = rank === 0
+        ? 'radial-gradient(circle at 35% 30%,#fff3a0 0%,#f7c94b 30%,#c8950a 100%)'
+        : 'radial-gradient(circle at 35% 30%,#d4ecff 0%,#7ab8e8 30%,#2968a8 100%)';
+      var ballClr = rank === 0 ? '#3a2200' : '#001833';
       return (
-        '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">' +
-          '<div style="width:88px;height:88px;border-radius:50%;' +
-          'background:radial-gradient(circle at 35% 35%,#ffe06a 0%,#c8950a 100%);' +
-          'display:flex;align-items:center;justify-content:center;' +
-          'color:#1a0e00;font:800 32px/1 var(--mono);' +
-          'box-shadow:0 6px 28px rgba(212,175,55,0.58),0 2px 8px rgba(0,0,0,0.4);">' +
-            fmt(item.n) +
+        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:12px;padding:0 12px;">' +
+          /* 標籤 */
+          '<div style="font:600 13px/1 var(--mono);color:var(--fg-3);letter-spacing:0.06em;">' +
+            medal + '&nbsp;' + label +
           '</div>' +
-          '<div style="width:88px;">' +
-            '<div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.08);margin-bottom:6px;">' +
-              '<div style="height:100%;width:' + confPct + '%;border-radius:2px;background:var(--gold);"></div>' +
+          /* 大球 */
+          '<div style="width:110px;height:110px;border-radius:50%;' +
+          'background:' + ballBg + ';' +
+          'display:flex;align-items:center;justify-content:center;' +
+          'color:' + ballClr + ';font:900 40px/1 var(--mono);' +
+          'box-shadow:0 8px 32px rgba(0,0,0,0.5),0 2px 8px rgba(0,0,0,0.3),inset 0 -4px 8px rgba(0,0,0,0.15);">' +
+            fmt2(st.num) +
+          '</div>' +
+          /* 信心條 */
+          '<div style="width:100%;max-width:110px;">' +
+            '<div style="display:flex;justify-content:space-between;margin-bottom:5px;">' +
+              '<span style="font:11px var(--mono);color:var(--fg-3);">AI 信心</span>' +
+              '<span style="font:700 13px var(--mono);color:var(--gold);">' + st.conf + '%</span>' +
             '</div>' +
-            '<div style="font:700 15px var(--mono);color:var(--gold);text-align:center;">' + supportPct + '%</div>' +
-            '<div style="font:10px var(--mono);color:var(--fg-3);text-align:center;line-height:1.6;">' +
-              item.v + '/' + validN + '&thinsp;策略支持' +
+            '<div style="height:6px;border-radius:3px;background:rgba(255,255,255,0.08);">' +
+              '<div style="height:100%;width:' + barW + '%;border-radius:3px;background:' + barClr + ';transition:width 0.6s;"></div>' +
+            '</div>' +
+            '<div style="margin-top:6px;font:11px var(--mono);color:var(--fg-3);text-align:center;">' +
+              st.votes + '&thinsp;/&thinsp;' + validN + ' 策略支持（' + st.sup + '%）' +
             '</div>' +
           '</div>' +
         '</div>'
       );
-    }).join('<div style="width:1px;background:var(--line);align-self:stretch;margin:4px 0 10px;"></div>');
+    }
+
+    var divider = (
+      '<div style="width:1px;background:var(--line);align-self:stretch;margin:8px 0 20px;flex-shrink:0;"></div>'
+    );
 
     pp.innerHTML = (
-      '<div style="padding:28px 20px 22px;display:flex;flex-direction:column;align-items:center;gap:18px;">' +
-        '<div style="display:flex;gap:36px;align-items:flex-start;">' + ballsHtml + '</div>' +
-        '<div style="border-top:1px solid var(--line);padding-top:14px;width:100%;text-align:center;">' +
-          '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.08em;line-height:2;">' +
-            '加權共識 TOP 2　·　僅採納命中率優於隨機的策略參與投票<br>' +
-            '點擊「策略命中率追蹤」查看個別策略詳情' +
-          '</div>' +
+      /* ── 標題列 ── */
+      '<div style="' +
+        'padding:18px 20px 10px;' +
+        'display:flex;align-items:center;gap:8px;' +
+        'border-bottom:1px solid rgba(255,255,255,0.06);">' +
+        '<span style="font:700 13px var(--mono);color:var(--gold);letter-spacing:0.06em;">⚡ AI 加權共識預測</span>' +
+        '<span style="margin-left:auto;font:11px var(--mono);color:var(--fg-3);">' +
+          '綜合 ' + validN + ' 個策略 · 僅採納優於隨機的策略' +
+        '</span>' +
+      '</div>' +
+      /* ── 兩顆大球 ── */
+      '<div style="padding:28px 8px 20px;display:flex;align-items:flex-start;gap:0;">' +
+        makeBall(stars[0], 0) +
+        divider +
+        makeBall(stars[1], 1) +
+      '</div>' +
+      /* ── 說明文字 ── */
+      '<div style="' +
+        'margin:0 16px 20px;padding:14px 16px;' +
+        'border-radius:10px;' +
+        'background:rgba(255,255,255,0.04);' +
+        'border:1px solid rgba(255,255,255,0.07);">' +
+        '<div style="font:700 12px var(--mono);color:var(--fg-2);margin-bottom:8px;">📖 這 2 個號碼是怎麼算出來的？</div>' +
+        '<div style="font:12px/1.9 var(--mono);color:var(--fg-3);">' +
+          '系統同時運行 ' + validN + ' 個不同分析策略（馬可夫鏈、頻率、冷熱號等）<br>' +
+          '只有「歷史命中率高於純隨機」的策略才有資格投票<br>' +
+          '每個策略的票數依命中率加權，再挑出得票最高的 2 個號碼<br>' +
+          '🥇 金球 = 最強推薦　　🥈 藍球 = 次強推薦' +
         '</div>' +
       '</div>'
     );
 
+    // 插入到 card-h 後面
     var cardH = predCard.querySelector('.card-h');
     if (cardH) {
       predCard.insertBefore(pp, cardH.nextSibling);
