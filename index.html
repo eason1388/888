@@ -3730,74 +3730,65 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 3a. 主預測區只留最高機率 2 顆球（v5.8）──
-     核心邏輯：從每個百分比文字節點出發，逐層往上試深度。
-     在「正確」深度時，從該 pctEl 往上 N 層得到的元素，
-     會是 4+ 個彼此不同、且共享同一個父層（siblings）的元素 → 就是球單元。
-     這樣既不依賴 class/id，也修正了 v5.7 fallback 走到同一個 flex-row 的 bug。── */
+  /* ── 3a. 主預測區只留最高機率 2 顆球（v5.9：兩段式定位）──
+     Stage 1：掃 div 子元素的 textContent，找到「4-7 個子元素都含 % 符號」的容器 = 球列
+     Stage 2：對每個球單元，用 TreeWalker 找精確百分比文字節點；
+              找不到（React 把數字和 % 分在不同節點時）則用 /(\d{2})%/ 從合併文字提取
+     → 不依賴 class/id，也不會被文字節點拆分問題卡死                        ── */
   function limitPredictionBalls() {
-    // ① 用 TreeWalker 找純百分比文字節點（"88%", "93%"…），避開 React textContent 合併
-    var pctEls = [];
-    var tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-    var tn;
-    while ((tn = tw.nextNode())) {
-      var t = (tn.textContent || '').trim();
-      if (/^\d{2,3}%$/.test(t) && tn.parentElement) {
-        pctEls.push(tn.parentElement);
+    // ─ Stage 1：找球列容器 ─────────────────────────────────────
+    var ballRow = null;
+    var divs = document.querySelectorAll('div');
+    for (var i = 0; i < divs.length; i++) {
+      var d = divs[i];
+      var kids = Array.from(d.children);
+      if (kids.length < 4 || kids.length > 7) continue;
+      var pctKids = kids.filter(function(k) {
+        return /\d{1,3}%/.test(k.textContent || '');
+      });
+      if (pctKids.length >= 4) { ballRow = d; break; }
+    }
+    if (!ballRow) return;
+
+    // ─ Stage 2：提取每顆球的百分比 ────────────────────────────
+    function extractPct(unit) {
+      // 先用 TreeWalker 在球單元內找純百分比文字節點 ("65%", "69%"...)
+      var tw2 = document.createTreeWalker(unit, NodeFilter.SHOW_TEXT, null, false);
+      var tn2;
+      while ((tn2 = tw2.nextNode())) {
+        var t2 = (tn2.textContent || '').trim();
+        if (/^\d{2,3}%$/.test(t2)) return parseInt(t2);
       }
+      // Fallback：從合併 textContent 中找「剛好 2 位數字 + %」
+      // e.g. "0765%" → 找最後一個 \d{2}% 出現位置 → "65%"
+      var m = (unit.textContent || '').match(/(\d{2})%/g);
+      if (m && m.length) {
+        // 取最後一個 match（離 % 最近的那個，避免球號誤判）
+        var last = m[m.length - 1];
+        return parseInt(last);
+      }
+      return 0;
     }
-    if (pctEls.length < 4) return;
 
-    // ② 對每個深度（從 pctEl 往上 0~7 層取「球單元」候選），
-    //    統計有多少球單元候選共享同一個父層，取最多的那組。
-    //    當 4+ 個「不同的」元素共享同一父層，就找到了球列。
-    for (var unitDepth = 0; unitDepth <= 7; unitDepth++) {
-      // 計算每個 pctEl 在此深度的「球單元候選」
-      var candidates = pctEls.map(function(el) {
-        var u = el;
-        for (var d = 0; d < unitDepth; d++) {
-          if (!u.parentElement || u.parentElement === document.body) break;
-          u = u.parentElement;
-        }
-        return u;
-      });
+    var ballUnits = Array.from(ballRow.children).filter(function(k) {
+      return /\d{1,3}%/.test(k.textContent || '');
+    });
+    if (ballUnits.length < 4) return;
 
-      // 按「父層」分組，統計各父層下有多少個不同的候選
-      var parentGroups = [];
-      candidates.forEach(function(u) {
-        var par = u.parentElement;
-        if (!par || par === document.body) return;
-        var grp = parentGroups.find(function(g) { return g.par === par; });
-        if (!grp) { grp = { par: par, units: [] }; parentGroups.push(grp); }
-        if (grp.units.indexOf(u) < 0) grp.units.push(u); // 去重
-      });
+    var ranked = ballUnits.map(function(u) {
+      return { unit: u, pct: extractPct(u) };
+    }).sort(function(a, b) { return b.pct - a.pct; });
 
-      // 找擁有最多不同球單元的父層
-      var best = parentGroups.reduce(function(acc, g) {
-        return g.units.length > acc.units.length ? g : acc;
-      }, { par: null, units: [] });
-
-      if (best.units.length < 4) continue; // 這個深度不夠，繼續試更深
-
-      // ③ 找到球列！依百分比排序，Top 2 保留，其餘隱藏
-      var ballUnits = best.units;
-      var ranked = ballUnits.map(function(u) {
-        var pctEl = pctEls.find(function(p) { return u === p || u.contains(p); });
-        return { unit: u, pct: pctEl ? parseInt(pctEl.textContent) : 0 };
-      }).sort(function(a, b) { return b.pct - a.pct; });
-
-      var keepSet = new Set([ranked[0].unit, ranked[1].unit]);
-      ballUnits.forEach(function(u) {
-        if (keepSet.has(u)) {
-          u.style.removeProperty('display');
-          u.style.transform = 'scale(1.1)';
-          u.style.transition = 'transform 0.2s';
-        } else {
-          u.style.setProperty('display', 'none', 'important');
-        }
-      });
-      return; // 完成，不繼續試更深的深度
-    }
+    var keepSet = new Set([ranked[0].unit, ranked[1].unit]);
+    ballUnits.forEach(function(u) {
+      if (keepSet.has(u)) {
+        u.style.removeProperty('display');
+        u.style.transform = 'scale(1.1)';
+        u.style.transition = 'transform 0.2s';
+      } else {
+        u.style.setProperty('display', 'none', 'important');
+      }
+    });
   }
 
   /* ── 3b. 策略卡片只顯示前 2 個預測號碼（v5.6：標記 container 而非 card）── */
@@ -3960,7 +3951,136 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v5.8';
+  var V5_VERSION = 'v6.0';
+
+  /* ══════════════════════════════════════════════════════════
+     buildPowerPanel()：加權共識演算法 + 直接注入預測面板
+     ─────────────────────────────────────────────────────────
+     演算法原理：
+       每個策略 i 的「有效權重」= max(0, hitRate_i - randomBaseline)
+       → 只有命中率優於隨機的策略才參與投票
+       → 命中率越高、勝出幅度越大，權重越高（獎勵強者）
+       每個號碼 n 的得分 = Σ weight_i × (5 - rank_i) / 5
+       → 策略預測排名越靠前，分數貢獻越大
+       最終取得分最高的 2 個號碼
+     注入方式：
+       找到「下期預測號碼」.card → 隱藏 React 的 .card-b
+       → 在 .card-h 後插入我們的 <div id="__v5_pp">
+       React 不管理此 div，不會被覆蓋
+  ══════════════════════════════════════════════════════════ */
+  function buildPowerPanel() {
+    // 若已注入且仍在 DOM，跳過
+    var existing = document.getElementById('__v5_pp');
+    if (existing && document.body.contains(existing)) return;
+
+    var eng = window.__lottoEngine;
+    if (!eng || !eng.fns || !eng.runBT) return;
+
+    // 取歷史資料
+    var draws = [];
+    try {
+      var br = window.__lottoSummaryBridge;
+      draws = (br && (br.draws || br.history)) || [];
+    } catch(e) {}
+    if (draws.length < 10) return;
+    var history = draws.slice(1);
+
+    // ── 加權投票 ──────────────────────────────────────────────
+    var rndAvg = eng.rndAvg || (2*5/39);
+    var scores = {}, voteCnt = {};
+    var totalW = 0, validN = 0;
+    ['S-01','S-02','S-03','S-04','S-05','S-06','S-07',
+     'S-08','S-11','S-12','S-13','S-14','S-15'].forEach(function(sid) {
+      if (!eng.fns[sid]) return;
+      try {
+        var bt = eng.runBT(sid);
+        if (!bt || !bt.st || !bt.st.t) return;
+        var avg = (bt.st.h1 + bt.st.h2 * 2) / bt.st.t;
+        var w = Math.max(0, avg - rndAvg);  // 只用優於隨機的策略
+        var pred = eng.fns[sid](history, 0);
+        if (!pred || !pred.length) return;
+        validN++;
+        if (w > 0) {
+          totalW += w;
+          pred.slice(0, 5).forEach(function(n, rank) {
+            scores[n] = (scores[n] || 0) + w * (5 - rank) / 5;
+            voteCnt[n] = (voteCnt[n] || 0) + 1;
+          });
+        }
+      } catch(e) {}
+    });
+    if (!totalW || !Object.keys(scores).length) return;
+
+    var sorted = Object.keys(scores).map(function(n) {
+      return { n: parseInt(n), s: scores[n], v: voteCnt[n] || 0 };
+    }).sort(function(a, b) { return b.s - a.s; });
+    if (sorted.length < 2) return;
+
+    var top2   = sorted.slice(0, 2);
+    var maxS   = sorted[0].s;
+    function fmt(n) { return String(n).padStart(2, '0'); }
+
+    // ── 找「下期預測號碼」card ─────────────────────────────────
+    var predCard = null;
+    document.querySelectorAll('.card').forEach(function(c) {
+      if (predCard) return;
+      var h = c.querySelector('.card-h');
+      if (h && (h.textContent || '').includes('下期預測號碼')) predCard = c;
+    });
+    if (!predCard) return;
+
+    // 隱藏 React 的 card-b（不刪除，讓 React 繼續管理自己的節點）
+    var cardB = predCard.querySelector('.card-b');
+    if (cardB) cardB.style.setProperty('display', 'none', 'important');
+
+    // ── 建立我們的面板 ────────────────────────────────────────
+    var pp = document.createElement('div');
+    pp.id = '__v5_pp';
+
+    var ballsHtml = top2.map(function(item) {
+      var confPct    = Math.round(item.s / maxS * 100);
+      var supportPct = Math.round(item.v / validN * 100);
+      return (
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">' +
+          '<div style="width:88px;height:88px;border-radius:50%;' +
+          'background:radial-gradient(circle at 35% 35%,#ffe06a 0%,#c8950a 100%);' +
+          'display:flex;align-items:center;justify-content:center;' +
+          'color:#1a0e00;font:800 32px/1 var(--mono);' +
+          'box-shadow:0 6px 28px rgba(212,175,55,0.58),0 2px 8px rgba(0,0,0,0.4);">' +
+            fmt(item.n) +
+          '</div>' +
+          '<div style="width:88px;">' +
+            '<div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.08);margin-bottom:6px;">' +
+              '<div style="height:100%;width:' + confPct + '%;border-radius:2px;background:var(--gold);"></div>' +
+            '</div>' +
+            '<div style="font:700 15px var(--mono);color:var(--gold);text-align:center;">' + supportPct + '%</div>' +
+            '<div style="font:10px var(--mono);color:var(--fg-3);text-align:center;line-height:1.6;">' +
+              item.v + '/' + validN + '&thinsp;策略支持' +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('<div style="width:1px;background:var(--line);align-self:stretch;margin:4px 0 10px;"></div>');
+
+    pp.innerHTML = (
+      '<div style="padding:28px 20px 22px;display:flex;flex-direction:column;align-items:center;gap:18px;">' +
+        '<div style="display:flex;gap:36px;align-items:flex-start;">' + ballsHtml + '</div>' +
+        '<div style="border-top:1px solid var(--line);padding-top:14px;width:100%;text-align:center;">' +
+          '<div style="font:10px var(--mono);color:var(--fg-3);letter-spacing:0.08em;line-height:2;">' +
+            '加權共識 TOP 2　·　僅採納命中率優於隨機的策略參與投票<br>' +
+            '點擊「策略命中率追蹤」查看個別策略詳情' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+
+    var cardH = predCard.querySelector('.card-h');
+    if (cardH) {
+      predCard.insertBefore(pp, cardH.nextSibling);
+    } else {
+      predCard.appendChild(pp);
+    }
+  }
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
     var badge = document.createElement('div');
@@ -3992,7 +4112,8 @@ const summaryHitStats = useMemo(() => {
       injectVersionBadge();
       hideSummary();
       removeDetail();
-      limitPredictionBalls();    // v5.7: TreeWalker 掃百分比文字節點，不依賴 DOM 結構
+      buildPowerPanel();         // v6.0：加權共識演算法面板（優先）
+      limitPredictionBalls();    // v5.9：fallback
       limitPills();
       rebuildTracker();
     } catch(e) {}
