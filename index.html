@@ -2249,17 +2249,11 @@ const summaryHitStats = useMemo(() => {
         color:#141414 !important; box-shadow:0 2px 10px rgba(217,164,65,0.35) !important;
         margin:0 3px !important; transition:transform 0.15s ease !important; }
       .__v5_pred2:hover { transform:scale(1.12) !important; }
-      /* 策略命中率追蹤 增強 */
-      .__v5_tracker { font-size:13px !important; }
-      .__v5_tracker_head { font:700 11px var(--mono) !important; color:var(--fg-3) !important;
-        padding:10px 16px !important; letter-spacing:0.06em !important; }
-      .__v5_tracker_row { min-height:50px !important; padding:11px 16px !important;
-        border-bottom:1px solid rgba(255,255,255,0.05) !important; }
-      .__v5_tracker_row:hover { background:rgba(255,255,255,0.03) !important; }
-      .__v5_tracker_sid { font:700 13px var(--mono) !important; color:var(--gold) !important; }
-      .__v5_tracker_name { font:11px var(--mono) !important; color:var(--fg-3) !important; }
-      .__v5_tracker_stat { font:700 15px var(--mono) !important; }
-      .__v5_tracker_diff { font:10px var(--mono) !important; }
+      /* 策略命中率追蹤 v5.5+ 卡片列 */
+      .__v5_tr_row { transition:background 0.15s ease,border-color 0.15s ease !important; }
+      .__v5_tr_row:hover { background:rgba(255,255,255,0.06) !important;
+        border-color:rgba(255,255,255,0.18) !important; }
+      @media (hover:none) { .__v5_tr_row:active { background:rgba(255,255,255,0.08) !important; } }
       /* 手機優化 */
       @media (max-width:640px) {
         #__lotto_bt_v3 .v5-grid { grid-template-columns:56px 56px 1fr 34px !important; }
@@ -3695,12 +3689,18 @@ const summaryHitStats = useMemo(() => {
   var busy = false;
   var _timer = null;
 
-  /* ── 1. 隱藏綜合摘要 ── */
+  /* ── 1. 隱藏多餘區塊（綜合摘要 + 近期開獎，後者已整合進 backtest panel）── */
   function hideSummary() {
     document.querySelectorAll('.card').forEach(function(c) {
       if (c.getAttribute('data-v5h')) return;
-      var txt = c.textContent || '';
-      if (txt.includes('TOP 2 CONSENSUS') || txt.includes('綜合摘要')) {
+      var h = c.querySelector('.card-h');
+      var htxt = h ? (h.textContent || '') : '';
+      var ctxt = c.textContent || '';
+      var shouldHide =
+        ctxt.includes('TOP 2 CONSENSUS') ||
+        ctxt.includes('綜合摘要') ||
+        htxt.includes('近期開獎');   // 已整合進各策略 backtest panel，不再獨立顯示
+      if (shouldHide) {
         c.style.setProperty('display','none','important');
         c.setAttribute('data-v5h','1');
       }
@@ -3817,22 +3817,25 @@ const summaryHitStats = useMemo(() => {
       '</div>';
   }
 
-  /* ── 3b. 策略卡片只顯示前 2 個預測號碼（v5.4：更穩定的父層偵測）── */
+  /* ── 3b. 策略卡片只顯示前 2 個預測號碼（v5.6：標記 container 而非 card）── */
   function limitPills() {
     document.querySelectorAll('.card').forEach(function(card) {
-      if (card.getAttribute('data-v5p')) return;
       var hdr = card.querySelector('.card-h');
       if (!hdr || !/S-\d{2}/.test(hdr.textContent || '')) return;
 
-      // 找到「直接含有 3+ 個 .markov-pill.hot」的父容器
-      var processed = false;
       card.querySelectorAll('div').forEach(function(el) {
-        if (processed) return;
+        // v5.6：標記 container div（不是 card），React 重渲時 container 內容被替換
+        // → data-v5p 屬性隨之消失 → 下次 applyAll 重新套用
+        if (el.getAttribute('data-v5p')) return;
+
         var directHot = Array.from(el.children).filter(function(c) {
-          return c.classList && c.classList.contains('markov-pill') && c.classList.contains('hot');
+          return c.classList &&
+                 c.classList.contains('markov-pill') &&
+                 c.classList.contains('hot');
         });
         if (directHot.length < 3) return;
 
+        el.setAttribute('data-v5p', '1');
         directHot.forEach(function(pill, idx) {
           if (idx >= 2) {
             pill.style.setProperty('display', 'none', 'important');
@@ -3844,9 +3847,7 @@ const summaryHitStats = useMemo(() => {
             pill.style.fontWeight = '800';
           }
         });
-        processed = true;
       });
-      if (processed) card.setAttribute('data-v5p', '1');
     });
   }
 
@@ -3976,7 +3977,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v5.5';
+  var V5_VERSION = 'v5.6';
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
     var badge = document.createElement('div');
