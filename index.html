@@ -3937,21 +3937,21 @@ const summaryHitStats = useMemo(() => {
     });
 
     html += '</div>'; // 外層 flex column
-    html += '<div style="margin-top:12px;text-align:center;font:9px var(--mono);color:var(--fg-3);letter-spacing:0.08em;">點擊策略列 → 展開近期開獎歷史比對</div>';
+    html += '<div style="margin-top:12px;text-align:center;font:9px var(--mono);color:var(--fg-3);letter-spacing:0.08em;">點擊任一策略列 → 進入獨立詳細分析頁面</div>';
 
     cardB.innerHTML = html;
 
-    // 讓新設計的策略列點擊展開回測
+    // 策略命中率追蹤列 → 點擊進入獨立分析頁
     cardB.querySelectorAll('.__v5_tr_row[data-sid]').forEach(function(row) {
       row.addEventListener('click', function() {
         var sid = row.getAttribute('data-sid');
-        if (sid && window.__lottoShowPanel) window.__lottoShowPanel(sid);
+        if (sid) v7_showStrategyPage(sid);
       });
     });
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v7.0';
+  var V5_VERSION = 'v7.2';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -3972,17 +3972,22 @@ const summaryHitStats = useMemo(() => {
     var s = document.createElement('style');
     s.id = '__v7_css';
     s.textContent = [
-      /* 標記了 data-v7 屬性的 card，其 card-b 永遠隱藏 */
+      /* 三重 CSS 保障：任何一個 selector 命中都隱藏 card-b */
+      '.card[data-v7] .card-b { display:none !important; }',
       '.card[data-v7] > .card-b { display:none !important; }',
+      '[data-v7-cb] { display:none !important; }',
       /* 球彈入動畫 */
       '@keyframes v7pop {',
-      '  from { transform:scale(0.5) translateY(20px); opacity:0; }',
+      '  from { transform:scale(0.5) translateY(16px); opacity:0; }',
       '  to   { transform:scale(1)   translateY(0);    opacity:1; }',
       '}',
-      '#__v7 .v7b {',
-      '  animation: v7pop 0.45s cubic-bezier(0.34,1.56,0.64,1) both;',
-      '}',
-      '#__v7 .v7b:nth-child(3) { animation-delay:0.08s; }',
+      '#__v7 .v7b { animation:v7pop 0.45s cubic-bezier(0.34,1.56,0.64,1) both; }',
+      '#__v7 .v7b:last-child { animation-delay:0.08s; }',
+      /* 策略詳情頁滑入/滑出 */
+      '@keyframes v7slide { from{transform:translateX(100%)} to{transform:translateX(0)} }',
+      '@keyframes v7slideout { from{transform:translateX(0)} to{transform:translateX(100%)} }',
+      /* 策略卡點擊提示 */
+      '.card[data-sid-click]:hover .card-h { color:var(--gold,#d4a017) !important; cursor:pointer; }',
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -4142,39 +4147,353 @@ const summaryHitStats = useMemo(() => {
 
   /* ── 主入口（每次 applyAll 呼叫）───────────────────────── */
   function v7_buildPrediction() {
-    /* Step 1：注入 CSS（永久隱藏 card-b，只做一次） */
+    /* Step 1：注入 CSS（只做一次） */
     v7_injectCSS();
 
-    /* Step 2：找到預測卡並標記 data-v7（React 不知道這個屬性） */
+    /* Step 2：找預測卡（多重備用識別法） */
     var predCard = null;
     document.querySelectorAll('.card').forEach(function(c) {
       if (predCard) return;
+      /* 方法 A：card-h 含「下期預測號碼」 */
       var h = c.querySelector('.card-h');
-      if (h && (h.textContent || '').includes('下期預測號碼')) predCard = c;
+      if (h && (h.textContent || '').includes('下期預測號碼')) {
+        predCard = c; return;
+      }
+      /* 方法 B：卡片最上層文字含「下期預測號碼」（h 可能在更深層） */
+      if ((c.textContent || '').slice(0, 80).includes('下期預測號碼')) {
+        predCard = c;
+      }
     });
-    if (!predCard) return;
-    predCard.setAttribute('data-v7', '1');   /* CSS 靠這個 attr 隱藏 card-b */
+    if (!predCard) {
+      console.log('[v7] predCard NOT found');
+      return;
+    }
+    console.log('[v7] predCard found');
 
-    /* Step 3：面板已存在則跳過（React 不會移除我們的 div） */
+    /* Step 3：標記 card + 隱藏 card-b（CSS + inline 雙保障）*/
+    predCard.setAttribute('data-v7', '1');
+    var allCB = predCard.querySelectorAll('.card-b');
+    allCB.forEach(function(cb) {
+      cb.setAttribute('data-v7-cb', '1');           /* CSS 靠這個 attr */
+      cb.style.setProperty('display','none','important'); /* inline 備援 */
+    });
+    /* 若 .card-b 選不到，強制抹除所有直接子節點（保留我們的 #__v7） */
+    if (!allCB.length) {
+      Array.from(predCard.children).forEach(function(ch) {
+        if (ch.id === '__v7' || ch.classList.contains('card-h')) return;
+        ch.style.setProperty('display','none','important');
+      });
+    }
+
+    /* Step 4：面板已存在則停（card-b 已在 step3 重新隱藏，不需重建面板） */
     if (predCard.querySelector('#__v7')) return;
 
-    /* Step 4：取引擎 & 歷史 */
+    /* Step 5：取引擎 & 歷史資料 */
     var eng = window.__lottoEngine;
-    if (!eng || !eng.fns || !eng.runBT) return;
+    if (!eng || !eng.fns || !eng.runBT) {
+      console.log('[v7] engine not ready');
+      /* 先貼「計算中」佔位面板，避免畫面空白 */
+      v7_buildLoading(predCard);
+      return;
+    }
     var draws = [];
     try {
       var br = window.__lottoSummaryBridge;
       draws = (br && (br.draws || br.history)) || [];
     } catch(e) {}
-    if (draws.length < 10) return;
+    if (draws.length < 10) {
+      console.log('[v7] draws too few:', draws.length);
+      v7_buildLoading(predCard);
+      return;
+    }
 
-    /* Step 5：計算 */
+    /* Step 6：加權共識計算 */
     var res = v7_computeTopTwo(eng, draws.slice(1));
-    if (!res) return;
+    if (!res) {
+      console.log('[v7] compute returned null');
+      v7_buildLoading(predCard);
+      return;
+    }
+    console.log('[v7] top2:', res.top2.map(function(x){return x.n;}));
 
-    /* Step 6：建面板 */
+    /* Step 7：建面板 */
     v7_buildPanel(predCard, res);
   }
+
+  /* 資料還沒好時的佔位面板 */
+  function v7_buildLoading(predCard) {
+    if (predCard.querySelector('#__v7')) return;
+    var d = document.createElement('div');
+    d.id = '__v7';
+    d.innerHTML = '<div style="padding:40px;text-align:center;font:13px var(--mono,monospace);color:var(--fg-3,#888);">⏳ AI 正在分析歷史資料，請稍候…</div>';
+    var h = predCard.querySelector('.card-h');
+    if (h) predCard.insertBefore(d, h.nextSibling);
+    else predCard.appendChild(d);
+  }
+  /* ══════════════════════════════════════════════════════════
+     v7.2 策略獨立詳情頁系統
+     每個 S-XX 策略都有自己的全螢幕分析頁面
+     點擊策略追蹤器列 或 策略卡 → 滑入頁面
+  ══════════════════════════════════════════════════════════ */
+
+  var V7_STRAT_INFO = {
+    'S-01':{ icon:'🔥', desc:'熱號追蹤：統計近期最常出現的號碼，挑選出現頻率最高的作為預測。頻率越高代表號碼正處於「熱門期」。' },
+    'S-02':{ icon:'❄️', desc:'冷號反彈：追蹤長時間沒有出現的冷門號碼，預測其補號回歸的時機。冷號越久未出現，補出機率理論上越高。' },
+    'S-03':{ icon:'⏱',  desc:'遺漏分析：計算每個號碼距離上次出現已過了幾期（遺漏值），選取遺漏值超過平均的號碼作為推薦。' },
+    'S-04':{ icon:'⚖️', desc:'組合平衡：分析號碼的奇偶比例與大小號分布，選取符合歷史均衡規律的號碼組合。' },
+    'S-05':{ icon:'🔗', desc:'連號模式：識別歷史中連號組合的出現規律，預測本期是否會出現連號，以及連號的可能位置。' },
+    'S-06':{ icon:'🔄', desc:'一階馬可夫鏈：建立號碼間的轉移概率矩陣，根據上一期開出的號碼，預測最可能緊接出現的號碼。' },
+    'S-07':{ icon:'🔀', desc:'二階馬可夫鏈：同時考慮前兩期的開獎結果，建立更精確的轉移概率模型，比一階馬可夫預測能力更強。' },
+    'S-08':{ icon:'📊', desc:'頻率加權：以指數衰減方式對不同時間段的開獎記錄加權，近期開獎影響力高，遠期記錄影響力低。' },
+    'S-11':{ icon:'📅', desc:'週期間隔：分析每個號碼出現的時間間隔規律，識別出固定週期性補號的號碼，依週期預測下次出現時機。' },
+    'S-12':{ icon:'📈', desc:'趨勢追蹤：計算各號碼的出現趨勢（上升/持平/下降），優先選取目前正在上升趨勢中的號碼。' },
+    'S-13':{ icon:'🎯', desc:'熵值選號：利用資訊熵理論，選取能提供最高資訊量（最不確定）的號碼組合，以提高覆蓋廣度。' },
+    'S-14':{ icon:'🔗', desc:'關聯分析：計算歷史上號碼兩兩同時出現的頻率，找出高度關聯的號碼對，並利用其共現關係預測。' },
+    'S-15':{ icon:'📉', desc:'均值回歸：使用統計學均值回歸理論，預測各號碼在長期內回到期望出現次數的可能性。' },
+  };
+
+  /* 輔助：統計方塊 */
+  function v7_statBox(label, value, sub, clr) {
+    return (
+      '<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);' +
+      'border-radius:10px;padding:14px 8px;text-align:center;">' +
+        '<div style="font:11px var(--mono,monospace);color:var(--fg-3,#888);margin-bottom:6px;">' + label + '</div>' +
+        '<div style="font:800 20px var(--mono,monospace);color:' + (clr||'var(--gold,#d4a017)') + ';line-height:1.2;">' + value + '</div>' +
+        '<div style="font:10px var(--mono,monospace);color:var(--fg-3,#888);margin-top:4px;">' + sub + '</div>' +
+      '</div>'
+    );
+  }
+
+  /* 主函式：顯示策略詳情頁 */
+  function v7_showStrategyPage(sid) {
+    /* 移除舊頁面 */
+    var old = document.getElementById('__v7_page');
+    if (old) old.parentNode.removeChild(old);
+
+    var eng = window.__lottoEngine;
+    if (!eng) return;
+
+    /* 取歷史資料 */
+    var draws = [];
+    try { draws = (window.__lottoSummaryBridge.draws || window.__lottoSummaryBridge.history) || []; } catch(e) {}
+    var history = draws.slice(1);
+
+    var name = (eng.names && eng.names[sid]) || sid;
+    var info = V7_STRAT_INFO[sid] || { icon:'📊', desc:'分析歷史開獎資料，預測本期最可能出現的號碼。' };
+
+    /* 回測統計 */
+    var bt = null;
+    try { bt = eng.runBT(sid); } catch(e) {}
+    var t  = bt && bt.st ? (bt.st.t  || 0) : 0;
+    var h1 = bt && bt.st ? (bt.st.h1 || 0) : 0;
+    var h2 = bt && bt.st ? (bt.st.h2 || 0) : 0;
+    var rndAvg = eng.rndAvg || (2*5/39);
+    var hitAvg = t ? (h1 + h2*2) / t : 0;
+    var hitPct = Math.round(hitAvg * 100);
+    var vsPct  = Math.round((hitAvg - rndAvg) * 100);
+
+    /* 預測 */
+    var pred = [];
+    try {
+      if (eng.fns[sid] && history.length >= 5) pred = eng.fns[sid](history, 0) || [];
+    } catch(e) {}
+
+    function fmt(n) { return String(n).padStart(2,'0'); }
+
+    /* 排名 map */
+    var rankMap = {};
+    pred.forEach(function(n,i){ rankMap[n]=i; });
+
+    /* 全 39 號碼 grid */
+    var gridHTML = '';
+    for (var n=1; n<=39; n++) {
+      var r = rankMap.hasOwnProperty(n) ? rankMap[n] : 999;
+      var bg2,clr2,bdr2,fw2='700';
+      if (r<=1) {
+        bg2='radial-gradient(circle at 38% 30%,#fffac0 0%,#f9d44e 40%,#c8940a 100%)';
+        clr2='#2e1900'; bdr2='2px solid rgba(249,212,78,0.8)';
+      } else if (r<5) {
+        bg2='rgba(249,212,78,0.14)'; clr2='#f9d44e'; bdr2='1px solid rgba(249,212,78,0.35)';
+      } else if (r<10) {
+        bg2='rgba(80,200,120,0.12)'; clr2='#50c878'; bdr2='1px solid rgba(80,200,120,0.3)';
+      } else if (r<20) {
+        bg2='rgba(255,255,255,0.05)'; clr2='var(--fg-2,#ccc)'; bdr2='1px solid rgba(255,255,255,0.08)'; fw2='600';
+      } else {
+        bg2='rgba(255,255,255,0.02)'; clr2='var(--fg-3,#666)'; bdr2='1px solid rgba(255,255,255,0.04)'; fw2='400';
+      }
+      var rkLabel = r<999
+        ? '<div style="font:9px var(--mono,monospace);opacity:0.65;margin-top:1px;">#'+(r+1)+'</div>'
+        : '<div style="font:9px var(--mono,monospace);opacity:0.3;margin-top:1px;">—</div>';
+      gridHTML += (
+        '<div style="background:'+bg2+';color:'+clr2+';border:'+bdr2+';border-radius:8px;padding:8px 2px 5px;text-align:center;">' +
+          '<div style="font:'+fw2+' 15px var(--mono,monospace);">'+fmt(n)+'</div>' +
+          rkLabel +
+        '</div>'
+      );
+    }
+
+    /* 兩顆大推薦球 */
+    function bigBall(num, idx) {
+      var isG = idx===0;
+      var bg3 = isG
+        ? 'radial-gradient(circle at 38% 30%,#fffac0 0%,#f9d44e 35%,#c8940a 100%)'
+        : 'radial-gradient(circle at 38% 30%,#d8eeff 0%,#80bcf0 35%,#2166b0 100%)';
+      var sh3 = isG
+        ? '0 8px 32px rgba(248,200,0,0.5),0 3px 10px rgba(0,0,0,0.5)'
+        : '0 8px 32px rgba(40,130,210,0.4),0 3px 10px rgba(0,0,0,0.5)';
+      var tc  = isG ? '#2e1900' : '#001428';
+      var ac  = isG ? '#f9d44e' : '#80bcf0';
+      var lbl = isG ? '🥇 首選' : '🥈 次選';
+      return (
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;">' +
+          '<div style="font:700 13px var(--mono,monospace);color:'+ac+';">'+lbl+'</div>' +
+          '<div style="width:96px;height:96px;border-radius:50%;background:'+bg3+';' +
+          'display:flex;align-items:center;justify-content:center;' +
+          'font:900 36px var(--mono,monospace);color:'+tc+';box-shadow:'+sh3+';">' +
+            (num!=null ? fmt(num) : '??') +
+          '</div>' +
+        '</div>'
+      );
+    }
+
+    var vsClr = vsPct>=0 ? '#50c878' : '#ff6b6b';
+
+    /* 建立頁面元素 */
+    var page = document.createElement('div');
+    page.id = '__v7_page';
+    page.style.cssText = [
+      'position:fixed','inset:0','z-index:10000',
+      'background:var(--bg,#0d0d0d)',
+      'overflow-y:auto',
+      'font-family:var(--mono,monospace)',
+      'animation:v7slide 0.22s ease-out both',
+      '-webkit-overflow-scrolling:touch'
+    ].join(';');
+
+    page.innerHTML = (
+      /* ── Sticky 頂欄 ── */
+      '<div style="position:sticky;top:0;z-index:2;background:var(--bg,#0d0d0d);' +
+      'border-bottom:1px solid rgba(255,255,255,0.08);padding:12px 16px;' +
+      'display:flex;align-items:center;gap:12px;">' +
+        '<button id="__v7_back" style="background:rgba(255,255,255,0.08);' +
+        'border:1px solid rgba(255,255,255,0.15);color:var(--fg,#eee);' +
+        'border-radius:8px;padding:7px 14px;cursor:pointer;' +
+        'font:600 13px var(--mono,monospace);">← 返回</button>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font:800 15px var(--mono,monospace);color:var(--fg,#eee);' +
+          'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+            info.icon+'&nbsp;'+sid+'&ensp;·&ensp;'+name +
+          '</div>' +
+          '<div style="font:10px var(--mono,monospace);color:var(--fg-3,#888);margin-top:2px;">' +
+            '50 期回測 · 嚴謹數學分析' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      /* ── 本期推薦 ── */
+      '<div style="margin:16px;padding:22px 16px;border-radius:14px;' +
+      'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">' +
+        '<div style="font:700 11px var(--mono,monospace);color:var(--fg-3,#888);' +
+        'letter-spacing:.1em;margin-bottom:18px;">🎯 本期推薦號碼</div>' +
+        '<div style="display:flex;justify-content:center;gap:36px;">' +
+          bigBall(pred[0],0) + bigBall(pred[1],1) +
+        '</div>' +
+        (pred.length < 2
+          ? '<div style="text-align:center;margin-top:14px;font:12px var(--mono,monospace);color:var(--fg-3,#888);">⏳ 歷史資料不足，無法計算</div>'
+          : '') +
+      '</div>' +
+      /* ── 績效統計 ── */
+      '<div style="margin:0 16px 16px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">' +
+        v7_statBox('命中率', hitPct+'%', '近50期平均') +
+        v7_statBox('超越隨機', (vsPct>=0?'+':'')+vsPct+'%', '正值=有效策略', vsClr) +
+        v7_statBox('命中期數', (h1+h2)+'期', '共測 '+t+' 期') +
+      '</div>' +
+      /* ── 命中細項 ── */
+      '<div style="margin:0 16px 16px;padding:14px 16px;border-radius:12px;' +
+      'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">' +
+        '<div style="font:700 11px var(--mono,monospace);color:var(--fg-2,#ccc);' +
+        'letter-spacing:.06em;margin-bottom:10px;">📋 回測細項</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;">' +
+          '<div><div style="font:18px var(--mono,monospace);font-weight:800;color:var(--gold,#d4a017);">'+h2+'</div>' +
+          '<div style="font:10px var(--mono,monospace);color:var(--fg-3,#888);margin-top:3px;">兩碼全中</div></div>' +
+          '<div><div style="font:18px var(--mono,monospace);font-weight:800;color:var(--fg-2,#ccc);">'+h1+'</div>' +
+          '<div style="font:10px var(--mono,monospace);color:var(--fg-3,#888);margin-top:3px;">命中1碼</div></div>' +
+          '<div><div style="font:18px var(--mono,monospace);font-weight:800;color:var(--fg-3,#888);">'+(t-h1-h2)+'</div>' +
+          '<div style="font:10px var(--mono,monospace);color:var(--fg-3,#888);margin-top:3px;">未命中</div></div>' +
+        '</div>' +
+      '</div>' +
+      /* ── 策略說明 ── */
+      '<div style="margin:0 16px 16px;padding:14px 16px;border-radius:12px;' +
+      'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">' +
+        '<div style="font:700 11px var(--mono,monospace);color:var(--fg-2,#ccc);' +
+        'letter-spacing:.06em;margin-bottom:8px;">📖 策略原理</div>' +
+        '<div style="font:12px/1.9 var(--mono,monospace);color:var(--fg-3,#888);">' +
+          info.desc +
+        '</div>' +
+      '</div>' +
+      /* ── 號碼全排名 ── */
+      '<div style="margin:0 16px 32px;">' +
+        '<div style="font:700 11px var(--mono,monospace);color:var(--fg-2,#ccc);' +
+        'letter-spacing:.06em;margin-bottom:10px;">📊 所有號碼信心排名</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' +
+          '<span style="font:10px var(--mono,monospace);background:rgba(249,212,78,0.15);' +
+          'padding:2px 7px;border-radius:4px;color:#f9d44e;">🥇 TOP 2</span>' +
+          '<span style="font:10px var(--mono,monospace);background:rgba(249,212,78,0.07);' +
+          'padding:2px 7px;border-radius:4px;color:#d4b840;">TOP 5</span>' +
+          '<span style="font:10px var(--mono,monospace);background:rgba(80,200,120,0.1);' +
+          'padding:2px 7px;border-radius:4px;color:#50c878;">TOP 10</span>' +
+          '<span style="font:10px var(--mono,monospace);color:var(--fg-3,#888);padding:2px 4px;">' +
+          '（#排名 = 策略建議順序）</span>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;">' +
+          gridHTML +
+        '</div>' +
+      '</div>'
+    );
+
+    /* 返回鍵事件 */
+    var backBtn = page.querySelector('#__v7_back');
+    if (backBtn) {
+      backBtn.addEventListener('click', function() {
+        page.style.animation = 'v7slideout 0.2s ease-in both';
+        setTimeout(function() {
+          if (page.parentNode) page.parentNode.removeChild(page);
+        }, 200);
+      });
+    }
+
+    /* 手勢：右滑返回（簡易版） */
+    var touchStartX = 0;
+    page.addEventListener('touchstart', function(e){ touchStartX = e.touches[0].clientX; }, {passive:true});
+    page.addEventListener('touchend', function(e){
+      if (e.changedTouches[0].clientX - touchStartX > 80) {
+        page.style.animation = 'v7slideout 0.2s ease-in both';
+        setTimeout(function(){ if(page.parentNode) page.parentNode.removeChild(page); }, 200);
+      }
+    }, {passive:true});
+
+    document.body.appendChild(page);
+  }
+
+  /* 給策略卡加點擊進入詳情頁 */
+  function v7_addCardHandlers() {
+    document.querySelectorAll('.card').forEach(function(c) {
+      if (c.getAttribute('data-v7-click')) return;   /* 只綁一次 */
+      var h = c.querySelector('.card-h');
+      if (!h) return;
+      var m = (h.textContent||'').match(/S-(\d{2})/);
+      if (!m) return;
+      var sid = 'S-' + m[1];
+      c.setAttribute('data-v7-click','1');
+      /* 整張卡可點 */
+      c.style.cursor = 'pointer';
+      c.addEventListener('click', function(e) {
+        /* 避免攔截 React 內部按鈕點擊 */
+        if (e.target.tagName === 'BUTTON') return;
+        v7_showStrategyPage(sid);
+      });
+    });
+  }
+
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
     var badge = document.createElement('div');
@@ -4206,10 +4525,11 @@ const summaryHitStats = useMemo(() => {
       injectVersionBadge();
       hideSummary();
       removeDetail();
-      v7_buildPrediction();      // v7.0：CSS 永久鎖定 + 加權共識面板
-      limitPredictionBalls();    // v5.9：fallback（若 v7 未能執行）
+      v7_buildPrediction();      // v7.1：CSS 永久鎖定 + 加權共識面板
+      limitPredictionBalls();    // v5.9：fallback
       limitPills();
       rebuildTracker();
+      v7_addCardHandlers();      // v7.2：策略卡點擊進入詳情頁
     } catch(e) {}
     busy = false;
   }
