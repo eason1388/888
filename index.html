@@ -3730,81 +3730,74 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 3a. 主預測區只留最高機率 2 顆球（v5.7：TreeWalker 文字節點法）──
-     原 replacePredictionPanel() 失效原因：React 選號元件不是 .card/.card-h 結構，
-     函式找不到目標，靜默跳過。新方法：掃描純百分比文字節點（如 "88%"、"93%"），
-     不依賴任何 class 或 DOM 結構，React 怎麼渲染都能找到球。              ── */
+  /* ── 3a. 主預測區只留最高機率 2 顆球（v5.8）──
+     核心邏輯：從每個百分比文字節點出發，逐層往上試深度。
+     在「正確」深度時，從該 pctEl 往上 N 層得到的元素，
+     會是 4+ 個彼此不同、且共享同一個父層（siblings）的元素 → 就是球單元。
+     這樣既不依賴 class/id，也修正了 v5.7 fallback 走到同一個 flex-row 的 bug。── */
   function limitPredictionBalls() {
-    // ① 用 TreeWalker 找所有純百分比文字節點（避開 React textContent 合併問題）
+    // ① 用 TreeWalker 找純百分比文字節點（"88%", "93%"…），避開 React textContent 合併
     var pctEls = [];
-    var root = document.querySelector('.grid') || document.body;
-    var tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
     var tn;
     while ((tn = tw.nextNode())) {
       var t = (tn.textContent || '').trim();
-      // 只匹配 2-3 位純數字百分比，排除 "1/39" 這類分數文字
       if (/^\d{2,3}%$/.test(t) && tn.parentElement) {
         pctEls.push(tn.parentElement);
       }
     }
     if (pctEls.length < 4) return;
 
-    // ② 找到把最多百分比元素聚在一起的祖先（球列容器）
-    var bestAnc = null, bestGroup = [];
-    for (var depth = 1; depth <= 7; depth++) {
-      var ancs = [];
-      pctEls.forEach(function(el) {
-        var a = el;
-        for (var d = 0; d < depth; d++) {
-          if (!a.parentElement || a.parentElement === document.body) break;
-          a = a.parentElement;
+    // ② 對每個深度（從 pctEl 往上 0~7 層取「球單元」候選），
+    //    統計有多少球單元候選共享同一個父層，取最多的那組。
+    //    當 4+ 個「不同的」元素共享同一父層，就找到了球列。
+    for (var unitDepth = 0; unitDepth <= 7; unitDepth++) {
+      // 計算每個 pctEl 在此深度的「球單元候選」
+      var candidates = pctEls.map(function(el) {
+        var u = el;
+        for (var d = 0; d < unitDepth; d++) {
+          if (!u.parentElement || u.parentElement === document.body) break;
+          u = u.parentElement;
         }
-        var entry = ancs.find(function(e) { return e.anc === a; });
-        if (entry) entry.els.push(el);
-        else ancs.push({ anc: a, els: [el] });
+        return u;
       });
-      ancs.forEach(function(e) {
-        if (e.els.length > bestGroup.length) {
-          bestGroup = e.els;
-          bestAnc = e.anc;
+
+      // 按「父層」分組，統計各父層下有多少個不同的候選
+      var parentGroups = [];
+      candidates.forEach(function(u) {
+        var par = u.parentElement;
+        if (!par || par === document.body) return;
+        var grp = parentGroups.find(function(g) { return g.par === par; });
+        if (!grp) { grp = { par: par, units: [] }; parentGroups.push(grp); }
+        if (grp.units.indexOf(u) < 0) grp.units.push(u); // 去重
+      });
+
+      // 找擁有最多不同球單元的父層
+      var best = parentGroups.reduce(function(acc, g) {
+        return g.units.length > acc.units.length ? g : acc;
+      }, { par: null, units: [] });
+
+      if (best.units.length < 4) continue; // 這個深度不夠，繼續試更深
+
+      // ③ 找到球列！依百分比排序，Top 2 保留，其餘隱藏
+      var ballUnits = best.units;
+      var ranked = ballUnits.map(function(u) {
+        var pctEl = pctEls.find(function(p) { return u === p || u.contains(p); });
+        return { unit: u, pct: pctEl ? parseInt(pctEl.textContent) : 0 };
+      }).sort(function(a, b) { return b.pct - a.pct; });
+
+      var keepSet = new Set([ranked[0].unit, ranked[1].unit]);
+      ballUnits.forEach(function(u) {
+        if (keepSet.has(u)) {
+          u.style.removeProperty('display');
+          u.style.transform = 'scale(1.1)';
+          u.style.transition = 'transform 0.2s';
+        } else {
+          u.style.setProperty('display', 'none', 'important');
         }
       });
-      if (bestGroup.length >= 4) break;
+      return; // 完成，不繼續試更深的深度
     }
-    if (!bestAnc || bestGroup.length < 4) return;
-
-    // ③ 找「球單元」：bestAnc 的直接子元素中，含有百分比元素的那些
-    var ballUnits = Array.from(bestAnc.children).filter(function(child) {
-      return bestGroup.some(function(p) { return child.contains(p); });
-    });
-    // 若直接子元素層太少，往下再找一層
-    if (ballUnits.length < 4) {
-      var seen = [];
-      bestGroup.forEach(function(pctEl) {
-        var u = pctEl;
-        while (u.parentElement && u.parentElement !== bestAnc) u = u.parentElement;
-        if (seen.indexOf(u) < 0) seen.push(u);
-      });
-      ballUnits = seen;
-    }
-    if (ballUnits.length < 4) return;
-
-    // ④ 依百分比值排序，Top 2 保留，其餘隱藏
-    var ranked = ballUnits.map(function(u) {
-      var pctEl = bestGroup.find(function(p) { return u.contains(p); });
-      return { unit: u, pct: pctEl ? parseInt(pctEl.textContent) : 0 };
-    }).sort(function(a, b) { return b.pct - a.pct; });
-
-    var keepSet = new Set([ranked[0].unit, ranked[1].unit]);
-    ballUnits.forEach(function(u) {
-      if (keepSet.has(u)) {
-        u.style.removeProperty('display');
-        u.style.transform = 'scale(1.08)';
-        u.style.transition = 'transform 0.2s';
-      } else {
-        u.style.setProperty('display', 'none', 'important');
-      }
-    });
   }
 
   /* ── 3b. 策略卡片只顯示前 2 個預測號碼（v5.6：標記 container 而非 card）── */
@@ -3967,7 +3960,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v5.7';
+  var V5_VERSION = 'v5.8';
   function injectVersionBadge() {
     if (document.getElementById('__v5_ver')) return;
     var badge = document.createElement('div');
