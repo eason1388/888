@@ -4538,6 +4538,24 @@ var V8='v8.0';
 var _done=false;
 var _timer=null;
 
+/* ─ 讀取歷史開獎（bridge 無 .draws，直接讀 localStorage）─ */
+function getV8Draws(){
+  try{
+    var br=window.__lottoSummaryBridge;
+    var arr=br&&(br.draws||br.history);
+    if(arr&&arr.length>=10) return arr;
+  }catch(e){}
+  try{
+    var raw=JSON.parse(localStorage.getItem('lotto_user_draws_d539')||'[]');
+    if(raw.length<10) return [];
+    /* 轉換 .draw -> .nums（策略函式 getNums() 需要 .nums）*/
+    return raw.map(function(r){
+      var nums=r.draw||r.nums||r.numbers||[];
+      return {nums:nums,draw:nums,period:r.period||'',year:r.year||0,month:r.month||0,day:r.day||0};
+    });
+  }catch(e){return [];}
+}
+
 /* ─ 立即注入 CSS（同步，無延遲）─ */
 (function(){
   if(document.getElementById('__v8css')) return;
@@ -4727,9 +4745,10 @@ function v8_detail(sid,eng,draws){
 function v8_build(){
   if(document.getElementById('__v8')) return;
   var eng=window.__lottoEngine;
-  var draws=[];
-  try{var br=window.__lottoSummaryBridge;draws=(br&&(br.draws||br.history))||[];}catch(e){}
-  if(!eng||!eng.fns||!eng.runBT||draws.length<15) return;
+  var draws=getV8Draws();
+  if(!eng||!eng.fns||!eng.runBT||draws.length<10) return;
+  /* 把 draws 注入 bridge，讓 runBacktest() 也能使用 */
+  try{if(window.__lottoSummaryBridge&&!window.__lottoSummaryBridge.draws)window.__lottoSummaryBridge.draws=draws;}catch(e){}
 
   var pred=v8_compute(eng,draws);
   if(!pred) return;
@@ -4871,6 +4890,9 @@ function v8_build(){
 
   var tmp=document.createElement('div');
   tmp.innerHTML=html;
+  /* 移除占位符 */
+  var _ph2=document.getElementById('__v8ph');
+  if(_ph2&&_ph2.parentNode) _ph2.parentNode.removeChild(_ph2);
   document.body.insertBefore(tmp.firstElementChild,document.body.firstChild);
   _done=true;
 
@@ -4922,6 +4944,14 @@ function v8_init(){
       '#__v8dp{position:fixed;inset:0;z-index:9999;background:#0d1117;overflow-y:auto;animation:v8slide .3s ease both;}',
     ].join('\n');
     document.head.appendChild(_s);
+  }
+  /* 注入占位符（用不同 id），避免純黑畫面 */
+  if(!document.getElementById('__v8')&&!document.getElementById('__v8ph')){
+    var _ph=document.createElement('div');
+    _ph.id='__v8ph';
+    _ph.style.cssText='min-height:100vh;display:flex;align-items:center;justify-content:center;';
+    _ph.innerHTML='<div style="text-align:center;font:12px monospace;color:#444;"><div style="font-size:28px;margin-bottom:12px;">🎯</div>今彩539 AI 系統<br><span style="color:#333;">載入中...</span></div>';
+    if(document.body) document.body.insertBefore(_ph,document.body.firstChild);
   }
   if(_done) return;
   v8_build();
