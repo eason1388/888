@@ -4594,6 +4594,7 @@ function getV8Draws(){
     '.v8row.top{border-color:rgba(212,175,55,.3);background:rgba(212,175,55,.04);}',
     '.v8row.beat{border-color:rgba(90,224,176,.2);}',
     '@keyframes v8flip{0%{transform:rotateY(90deg) scale(.8);opacity:0}60%{transform:rotateY(-8deg) scale(1.05)}100%{transform:rotateY(0) scale(1);opacity:1}}',
+    '@keyframes v8fade{from{opacity:0}to{opacity:1}}',
     '@keyframes v8ctapulse{0%,100%{box-shadow:0 8px 40px rgba(212,175,55,.35),0 2px 8px rgba(0,0,0,.5)}50%{box-shadow:0 8px 60px rgba(212,175,55,.6),0 2px 8px rgba(0,0,0,.5)}}',
     '#__v8cta_btn{animation:v8ctapulse 2.5s ease-in-out infinite;}',
     '.v8lock{filter:blur(6px);pointer-events:none;user-select:none;}',
@@ -4870,7 +4871,7 @@ function v8_build(){
   var heat=v8_heat(draws);
   var recent=draws.slice(1,21);
   var nextDate=v8_nextDate(draws);
-  var hitHistory=v8_recentHits(eng,draws,10);
+  var hitHistory=v8_recentHits(eng,draws,30);
   var hit1=hitHistory.filter(function(r){return r.hits>=1;}).length;
   var hit2=hitHistory.filter(function(r){return r.hits===2;}).length;
   var hitTotal=hitHistory.reduce(function(s,r){return s+r.hits;},0);
@@ -5109,8 +5110,8 @@ function v8_build(){
     +'<div style="display:flex;gap:8px;padding:12px 16px;background:rgba(0,0,0,.2);border-bottom:1px solid rgba(255,255,255,.04);">'
     +'<div class="v8statbox"><div style="font:800 20px monospace;color:#f9d44e;">'+(draws.length-1)+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">資料期數</div></div>'
     +'<div class="v8statbox"><div style="font:800 20px monospace;color:#ccc;">'+pred.validN+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">有效策略</div></div>'
-    +'<div class="v8statbox"><div style="font:800 20px monospace;color:#5ae0b0;">'+hit1+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">中1碼/10期</div></div>'
-    +'<div class="v8statbox"><div style="font:800 20px monospace;color:#f9d44e;">'+hit2+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">兩碼全中</div></div>'
+    +'<div class="v8statbox"><div style="font:800 20px monospace;color:#5ae0b0;">'+hit1+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">中1碼/'+hitHistory.length+'期</div></div>'
+    +'<div class="v8statbox"><div style="font:800 20px monospace;color:#f9d44e;">'+hit2+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">兩碼全中/'+hitHistory.length+'期</div></div>'
     +'</div>'
     /* HERO 預測 */
     +'<div style="padding:28px 16px 22px;background:linear-gradient(180deg,rgba(212,175,55,.06) 0%,rgba(0,0,0,0) 100%);border-bottom:1px solid rgba(255,255,255,.05);">'
@@ -5249,6 +5250,63 @@ function v8_build(){
       obs.observe(document.body,{childList:true,subtree:true});
     })();
   }
+
+  /* 解鎖 Modal */
+  function v8_showUnlock(){
+    if(document.getElementById('__v8modal')) return;
+    /* 完整5碼 */
+    var top5=pred.top5||pred.top2;
+    var allNums=top5.map(function(item){return fmt(item.n);}).join('  ');
+    var bgs=['radial-gradient(circle at 35% 28%,#fffce8,#f9d44e 45%,#c8940a 80%)','radial-gradient(circle at 35% 28%,#e8f4ff,#80bcf0 45%,#2166b0 80%)','radial-gradient(circle at 35% 28%,#d4f5e8,#5ae0b0 45%,#1a8c66 80%)','radial-gradient(circle at 35% 28%,#ffe8f5,#e08090 45%,#8c1a2e 80%)','radial-gradient(circle at 35% 28%,#e8e0ff,#9080e0 45%,#2e1a8c 80%)'];
+    var tcs=['#2e1900','#001428','#001a10','#2e0010','#0a001a'];
+    var ballsHtml='';
+    top5.forEach(function(item,i){
+      var conf=Math.round(item.s/pred.maxS*100);
+      ballsHtml+='<div style="display:flex;flex-direction:column;align-items:center;gap:5px;">';
+      ballsHtml+='<div style="width:56px;height:56px;border-radius:50%;background:'+bgs[i]+';display:flex;align-items:center;justify-content:center;font:800 22px monospace;color:'+tcs[i]+';box-shadow:0 4px 16px rgba(0,0,0,.5);animation:v8pop .4s cubic-bezier(.34,1.56,.64,1) '+(i*.08)+'s both;">'+fmt(item.n)+'</div>';
+      ballsHtml+='<div style="font:700 9px monospace;color:#888;">'+conf+'%</div>';
+      ballsHtml+='</div>';
+    });
+    var m=document.createElement('div');
+    m.id='__v8modal';
+    m.style.cssText='position:fixed;inset:0;z-index:99999;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.65);backdrop-filter:blur(6px);animation:v8fade .25s ease both;';
+    m.innerHTML=
+      '<div style="width:100%;max-width:860px;background:linear-gradient(180deg,#181008 0%,#0d1117 100%);border-radius:20px 20px 0 0;padding:28px 20px 36px;border-top:1px solid rgba(212,175,55,.3);animation:v8pop .35s cubic-bezier(.34,1.56,.64,1) both;">'
+      +'<div style="width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);margin:0 auto 22px;"></div>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">'
+      +'<div>'
+      +'<div style="font:800 18px monospace;color:#f9d44e;">🔓 本期完整預測</div>'
+      +'<div style="font:10px monospace;color:#555;margin-top:4px;">AI加權共識 · 全部5碼解鎖</div>'
+      +'</div>'
+      +'<button id="__v8modal_close" style="background:rgba(255,255,255,.07);border:none;color:#888;font:700 18px monospace;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>'
+      +'</div>'
+      +'<div style="display:flex;gap:12px;justify-content:center;margin-bottom:22px;">'+ballsHtml+'</div>'
+      +'<div style="background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.2);border-radius:12px;padding:14px 16px;margin-bottom:18px;">'
+      +'<div style="font:700 11px monospace;color:#f9d44e;margin-bottom:6px;">📋 完整組合：'+allNums+'</div>'
+      +'<div style="font:10px monospace;color:#555;line-height:1.7;">本期 AI 加權共識最強5碼 · 依信心指數排序 · 建議優先選擇前2碼</div>'
+      +'</div>'
+      +'<div style="background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px;text-align:center;">'
+      +'<div style="font:700 13px monospace;color:#ccc;margin-bottom:8px;">📬 訂閱完整分析報告</div>'
+      +'<div style="font:10px monospace;color:#555;margin-bottom:14px;line-height:1.7;">每期開獎前發送 · 策略詳解 · 命中統計 · AI預測組合</div>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<div style="flex:1;padding:12px;background:linear-gradient(135deg,#07b53b,#05a030);border-radius:10px;cursor:pointer;font:700 12px monospace;color:#fff;" onclick="window.open(\'https://line.me/R/\',\'_blank\')">'
+      +'💬 LINE 聯繫訂閱</div>'
+      +'<div style="flex:1;padding:12px;background:linear-gradient(135deg,rgba(212,175,55,.2),rgba(212,175,55,.1));border:1px solid rgba(212,175,55,.3);border-radius:10px;cursor:pointer;font:700 12px monospace;color:#f9d44e;" onclick="document.getElementById(\'__v8modal\').remove(\'\')">'
+      +'✓ 已了解</div>'
+      +'</div>'
+      +'</div>'
+      +'</div>';
+    document.body.appendChild(m);
+    m.addEventListener('click',function(e){if(e.target===m)m.remove();});
+    var cl=document.getElementById('__v8modal_close');
+    if(cl) cl.addEventListener('click',function(){m.remove();});
+  }
+
+  /* 解鎖按鈕事件 */
+  var _unlock=document.getElementById('__v8unlock');
+  if(_unlock) _unlock.addEventListener('click',v8_showUnlock);
+  var _cta=document.getElementById('__v8cta_btn');
+  if(_cta) _cta.addEventListener('click',v8_showUnlock);
 }
 
 /* ─ 初始化 ─
@@ -5290,6 +5348,7 @@ function v8_init(){
       '.v8row{cursor:pointer;transition:background .15s;}',
       '.v8row:hover,.v8row:active{filter:brightness(1.3);}',
       '@keyframes v8flip{0%{transform:rotateY(90deg) scale(.8);opacity:0}60%{transform:rotateY(-8deg) scale(1.05)}100%{transform:rotateY(0) scale(1);opacity:1}}',
+      '@keyframes v8fade{from{opacity:0}to{opacity:1}}',
       '@keyframes v8ctapulse{0%,100%{box-shadow:0 8px 40px rgba(212,175,55,.35),0 2px 8px rgba(0,0,0,.5)}50%{box-shadow:0 8px 60px rgba(212,175,55,.6),0 2px 8px rgba(0,0,0,.5)}}',
       '#__v8cta_btn{animation:v8ctapulse 2.5s ease-in-out infinite;}',
       '.v8lock{filter:blur(6px);pointer-events:none;user-select:none;}',
