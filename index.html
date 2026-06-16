@@ -4893,8 +4893,36 @@ function v8_build(){
   });
 }
 
-/* ─ 初始化 ─ */
+/* ─ 初始化 ─
+   必須在 document 被 bundler 替換之後注入 CSS，
+   所以 CSS injection 放在 v8_init()（timer 觸發），不能放在 IIFE 頂層 */
 function v8_init(){
+  /* 每次呼叫都確認 CSS 存在（document 可能已被替換） */
+  if(!document.getElementById('__v8css')){
+    var _s=document.createElement('style');
+    _s.id='__v8css';
+    _s.textContent=[
+      'body{background:#0d1117!important;justify-content:flex-start!important;align-items:flex-start!important;padding:0!important;}',
+      '#root,[id^="__bundler_"]{display:none!important;}',
+      '#__v8{box-sizing:border-box;width:100%;max-width:860px;margin:0 auto;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;animation:v8fade .4s ease both;}',
+      '@keyframes v8pop{0%{transform:scale(.4) translateY(20px);opacity:0}70%{transform:scale(1.07) translateY(-3px)}100%{transform:scale(1) translateY(0);opacity:1}}',
+      '@keyframes v8fade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}',
+      '@keyframes v8slide{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}',
+      '@keyframes v8out{from{transform:translateX(0)}to{transform:translateX(100%)}}',
+      '#__v8 .v8ball{animation:v8pop .5s cubic-bezier(.34,1.56,.64,1) both}',
+      '#__v8 .v8ball:nth-child(2){animation-delay:.12s}',
+      '.v8tab{cursor:pointer;padding:10px 18px;font:600 13px monospace;border-radius:8px;transition:.15s;user-select:none;white-space:nowrap;}',
+      '.v8tab.active{background:rgba(212,175,55,.15);color:#f9d44e;}',
+      '.v8tab:not(.active){color:#555;}',
+      '.v8tab:not(.active):hover,.v8tab:not(.active):active{color:#ccc;background:rgba(255,255,255,.06);}',
+      '.v8row{cursor:pointer;border-radius:14px;padding:14px 16px;transition:background .15s;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.015);margin-bottom:10px;}',
+      '.v8row:hover,.v8row:active{background:rgba(255,255,255,.055);}',
+      '.v8row.top{border-color:rgba(212,175,55,.3);background:rgba(212,175,55,.04);}',
+      '.v8row.beat{border-color:rgba(90,224,176,.2);}',
+      '#__v8dp{position:fixed;inset:0;z-index:9999;background:#0d1117;overflow-y:auto;animation:v8slide .3s ease both;}',
+    ].join('\n');
+    document.head.appendChild(_s);
+  }
   if(_done) return;
   v8_build();
 }
