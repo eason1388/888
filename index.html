@@ -4646,6 +4646,37 @@ function v8_heat(draws){
   return c;
 }
 
+/* ─ 計算下期開獎日（今彩539 週一～週五）─ */
+function v8_nextDate(draws){
+  try{
+    var d=draws[0];
+    if(!d||!d.year) return '';
+    var dt=new Date(d.year,(d.month||1)-1,d.day||1);
+    dt.setDate(dt.getDate()+1);
+    while(dt.getDay()===0||dt.getDay()===6) dt.setDate(dt.getDate()+1);
+    var days=['日','一','二','三','四','五','六'];
+    return dt.getFullYear()+'/'+(dt.getMonth()+1)+'/'+dt.getDate()+' (週'+days[dt.getDay()]+')';
+  }catch(e){return '';}
+}
+
+/* ─ 近期命中紀錄（walk-forward：用歷史切片預測，對比實際開獎）─ */
+function v8_recentHits(eng,draws,count){
+  var out=[];
+  var n=Math.min(count||10,draws.length-11);
+  for(var i=0;i<n;i++){
+    try{
+      var hist=draws.slice(i+1);
+      if(hist.length<10) break;
+      var pred=v8_compute(eng,hist);
+      var actual=(draws[i].nums||draws[i].draw||[]).slice();
+      var predNums=pred?pred.top2.map(function(p){return p.n;}):[0,0];
+      var hits=predNums.filter(function(pn){return actual.indexOf(pn)>=0;}).length;
+      out.push({draw:draws[i],pred:predNums,actual:actual,hits:hits});
+    }catch(e){}
+  }
+  return out;
+}
+
 /* ─ 策略說明 ─ */
 var SINFO={
   'S-01':{icon:'🔥',desc:'熱號追蹤：統計近期最常出現的號碼，挑選出現頻率最高的作為預測。頻率越高代表號碼正處於「熱門期」。'},
@@ -4756,6 +4787,11 @@ function v8_build(){
   var strats=v8_strats(eng,draws);
   var heat=v8_heat(draws);
   var recent=draws.slice(1,21);
+  var nextDate=v8_nextDate(draws);
+  var hitHistory=v8_recentHits(eng,draws,10);
+  var hit1=hitHistory.filter(function(r){return r.hits>=1;}).length;
+  var hit2=hitHistory.filter(function(r){return r.hits===2;}).length;
+  var hitTotal=hitHistory.reduce(function(s,r){return s+r.hits;},0);
 
   /* 預測球 HTML */
   var balls='';
@@ -4821,17 +4857,37 @@ function v8_build(){
     heatGrid+='</div>';
   }
 
-  /* 近期開獎 HTML */
-  var recentH='';
-  recent.forEach(function(d){
-    var nums=d.nums||d.numbers||d.n||[];
+  /* 近期命中比對 HTML */
+  var hitRowsH='';
+  hitHistory.forEach(function(r){
+    var d=r.draw;
     var ds='';
     try{ds=(d.year||'')+'.'+String(d.month||'').padStart(2,'0')+'.'+String(d.day||'').padStart(2,'0');}catch(e){}
-    var ns=nums.map(function(n){return '<span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);font:700 12px monospace;color:#aaa;">'+fmt(n)+'</span>';}).join('');
-    recentH+='<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05);">';
-    recentH+='<div style="font:11px monospace;color:#444;width:85px;flex-shrink:0;">'+ds+'</div>';
-    recentH+='<div style="display:flex;gap:7px;flex-wrap:wrap;">'+ns+'</div>';
-    recentH+='</div>';
+    var bgs=['radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)','radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)'];
+    var tcs=['#2e1900','#001428'];
+    var predH=r.pred.map(function(pn,bi){
+      var hit=r.actual.indexOf(pn)>=0;
+      var bg=hit?bgs[bi]:'rgba(255,255,255,.07)';
+      var tc=hit?tcs[bi]:'#444';
+      var shadow=hit?'0 2px 10px rgba(0,0,0,.4)':'none';
+      return '<div style="width:32px;height:32px;border-radius:50%;background:'+bg+';display:flex;align-items:center;justify-content:center;font:700 11px monospace;color:'+tc+';box-shadow:'+shadow+';">'+fmt(pn)+'</div>';
+    }).join('');
+    var actH=r.actual.map(function(an){
+      var hit=r.pred.indexOf(an)>=0;
+      return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:'+(hit?'rgba(90,224,176,.18)':'rgba(255,255,255,.05)')+';font:700 11px monospace;color:'+(hit?'#5ae0b0':'#444')+';">'+fmt(an)+'</span>';
+    }).join('');
+    var badge=r.hits===2?'<span style="font:700 10px monospace;color:#f9d44e;background:rgba(212,175,55,.15);padding:2px 8px;border-radius:4px;flex-shrink:0;">✓✓ 兩碼全中</span>':
+              r.hits===1?'<span style="font:700 10px monospace;color:#5ae0b0;background:rgba(90,224,176,.1);padding:2px 8px;border-radius:4px;flex-shrink:0;">✓ 中1碼</span>':
+                         '<span style="font:10px monospace;color:#2a2a2a;flex-shrink:0;">未中</span>';
+    hitRowsH+='<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.04);">';
+    hitRowsH+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'+
+               '<div style="font:11px monospace;color:#333;">'+ds+'</div>'+badge+'</div>';
+    hitRowsH+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+    hitRowsH+='<div style="font:9px monospace;color:#2a2a2a;flex-shrink:0;">AI預測</div>';
+    hitRowsH+='<div style="display:flex;gap:4px;">'+predH+'</div>';
+    hitRowsH+='<div style="font:9px monospace;color:#2a2a2a;flex-shrink:0;">→ 開獎</div>';
+    hitRowsH+='<div style="display:flex;gap:4px;flex-wrap:wrap;">'+actH+'</div>';
+    hitRowsH+='</div></div>';
   });
 
   /* 組合 HTML */
@@ -4841,7 +4897,9 @@ function v8_build(){
     /* HEADER */
     +'<div style="padding:18px 20px 16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;">'
     +'<div><div style="font:700 20px monospace;color:#f9d44e;letter-spacing:.02em;">🎯 今彩539</div>'
-    +'<div style="font:10px monospace;color:#444;margin-top:4px;">AI智能選號系統 · 真實資料分析 · '+(draws.length-1)+'期</div></div>'
+    +'<div style="font:10px monospace;color:#444;margin-top:4px;">AI智能選號系統 · 真實資料分析 · '+(draws.length-1)+'期</div>'
+    +(nextDate?'<div style="font:700 10px monospace;color:#5ae0b0;margin-top:5px;">📅 下期開獎：'+nextDate+'</div>':'')
+    +'</div></div>'
     +'<div style="font:700 11px monospace;color:#444;background:rgba(255,255,255,.04);padding:5px 12px;border-radius:6px;">'+V8+'</div>'
     +'</div>'
 
@@ -4882,8 +4940,27 @@ function v8_build(){
 
     /* TAB: 近期 */
     +'<div id="__v8t_recent" style="display:none;padding:16px;">'
-    +'<div style="font:10px monospace;color:#444;margin-bottom:10px;">最近 '+recent.length+' 期開獎結果</div>'
-    +recentH
+    /* 命中統計摘要 */
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">'
+    +'<div style="background:rgba(255,255,255,.03);border-radius:12px;padding:10px;text-align:center;border:1px solid rgba(255,255,255,.06);">'
+    +'<div style="font:700 22px monospace;color:#5ae0b0;">'+hit1+'</div>'
+    +'<div style="font:9px monospace;color:#444;margin-top:3px;">中1碼以上</div>'
+    +'<div style="font:9px monospace;color:#2a2a2a;">/'+hitHistory.length+'期</div>'
+    +'</div>'
+    +'<div style="background:rgba(255,255,255,.03);border-radius:12px;padding:10px;text-align:center;border:1px solid rgba(212,175,55,.15);">'
+    +'<div style="font:700 22px monospace;color:#f9d44e;">'+hit2+'</div>'
+    +'<div style="font:9px monospace;color:#444;margin-top:3px;">兩碼全中</div>'
+    +'<div style="font:9px monospace;color:#2a2a2a;">/'+hitHistory.length+'期</div>'
+    +'</div>'
+    +'<div style="background:rgba(255,255,255,.03);border-radius:12px;padding:10px;text-align:center;border:1px solid rgba(255,255,255,.06);">'
+    +'<div style="font:700 22px monospace;color:#ccc;">'+hitTotal+'</div>'
+    +'<div style="font:9px monospace;color:#444;margin-top:3px;">命中總碼數</div>'
+    +'<div style="font:9px monospace;color:#2a2a2a;">/'+(hitHistory.length*2)+'顆</div>'
+    +'</div>'
+    +'</div>'
+    /* 逐期比對 */
+    +'<div style="font:9px monospace;color:#333;margin-bottom:8px;letter-spacing:.05em;">━ 近期預測 vs 實際開獎比對 ━</div>'
+    +hitRowsH
     +'</div>'
 
     +'</div>';
