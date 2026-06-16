@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.3';
+var V8='v8.4';
 var _done=false;
 var _timer=null;
 
@@ -4593,6 +4593,8 @@ function getV8Draws(){
     '.v8row:hover,.v8row:active{background:rgba(255,255,255,.055);}',
     '.v8row.top{border-color:rgba(212,175,55,.3);background:rgba(212,175,55,.04);}',
     '.v8row.beat{border-color:rgba(90,224,176,.2);}',
+    '@keyframes v8ctapulse{0%,100%{box-shadow:0 8px 40px rgba(212,175,55,.35),0 2px 8px rgba(0,0,0,.5)}50%{box-shadow:0 8px 60px rgba(212,175,55,.6),0 2px 8px rgba(0,0,0,.5)}}',
+    '#__v8cta_btn{animation:v8ctapulse 2.5s ease-in-out infinite;}',
     '#__v8dp{position:fixed;inset:0;z-index:9999;background:#0d1117;overflow-y:auto;animation:v8slide .3s ease both;}',
     '@media(max-width:480px){#__v8 .v8ball{width:100px!important;height:100px!important;font-size:38px!important;}}',
   ].join('\n');
@@ -4705,6 +4707,53 @@ function v8_recentHits(eng,draws,count){
     }catch(e){}
   }
   return out;
+}
+
+/* ─ 號碼近期出現趨勢（返回最近 N 期是否含該號碼的陣列）─ */
+function v8_trend(draws,num,n){
+  var arr=[];
+  var slc=draws.slice(0,n||20);
+  slc.forEach(function(d){
+    var nums=d.nums||d.draw||[];
+    arr.push(nums.indexOf(num)>=0?1:0);
+  });
+  return arr;
+}
+
+/* ─ 生成 SVG 迷你折線圖（趨勢 sparkline）─ */
+function v8_sparkline(trend,color){
+  var W=120,H=32,pad=3;
+  var n=trend.length;
+  if(!n) return '';
+  /* 累計移動窗口（5期）*/
+  var pts=[];
+  for(var i=0;i<n;i++){
+    var win=trend.slice(Math.max(0,i-4),i+1);
+    var avg=win.reduce(function(s,v){return s+v;},0)/win.length;
+    pts.push(avg);
+  }
+  var minV=0,maxV=1;
+  var xs=pts.map(function(_,i){return pad+i*(W-pad*2)/(n-1||1);});
+  var ys=pts.map(function(v){return H-pad-(v-minV)/(maxV-minV||1)*(H-pad*2);});
+  var path='M'+xs[0]+','+ys[0];
+  for(var j=1;j<xs.length;j++){
+    var cx=(xs[j-1]+xs[j])/2;
+    path+=' C'+cx+','+ys[j-1]+' '+cx+','+ys[j]+' '+xs[j]+','+ys[j];
+  }
+  /* 點（命中期閃亮）*/
+  var dots='';
+  for(var k=0;k<trend.length;k++){
+    if(trend[k]) dots+='<circle cx="'+xs[k]+'" cy="'+ys[k]+'" r="3" fill="'+color+'" opacity=".9"/>';
+  }
+  return '<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="overflow:visible">'
+    +'<defs><linearGradient id="spg'+color.replace(/[^a-z0-9]/gi,'')+'_v8" x1="0" y1="0" x2="1" y2="0">'
+    +'<stop offset="0%" stop-color="'+color+'" stop-opacity=".1"/>'
+    +'<stop offset="100%" stop-color="'+color+'" stop-opacity=".6"/>'
+    +'</linearGradient></defs>'
+    +'<path d="'+path+' L'+xs[xs.length-1]+','+(H-pad)+' L'+xs[0]+','+(H-pad)+' Z" fill="url(#spg'+color.replace(/[^a-z0-9]/gi,'')+'_v8)" />'
+    +'<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+    +dots
+    +'</svg>';
 }
 
 /* ─ 策略說明 ─ */
@@ -4823,6 +4872,14 @@ function v8_build(){
   var hit2=hitHistory.filter(function(r){return r.hits===2;}).length;
   var hitTotal=hitHistory.reduce(function(s,r){return s+r.hits;},0);
 
+  /* 命中率 vs 隨機基準 */
+  var accPct=hitHistory.length?Math.round(hit1/hitHistory.length*100):0;
+  var rndPct=Math.round((1-Math.pow(34/39,5))*2*100); /* 粗估任一中1 */
+  var liftPct=rndPct>0?Math.round((accPct-rndPct)/rndPct*100):0;
+
+  /* 各預測號碼近20期趨勢 */
+  var trends=pred.top2.map(function(item){return v8_trend(draws.slice(1),item.n,20);});
+
   /* 預測球 HTML */
   var balls='';
   pred.top2.forEach(function(item,i){
@@ -4847,6 +4904,14 @@ function v8_build(){
     balls+='<div style="height:100%;width:'+conf+'%;background:'+bar+';border-radius:3px;transition:width .8s;"></div></div>';
     balls+='<div style="margin-top:8px;font:9px monospace;color:#444;text-align:center;">共 '+item.con+' 個策略支持</div>';
     balls+='<div style="margin-top:6px;text-align:center;">'+sidChips+'</div>';
+    /* 趨勢 sparkline */
+    var trend=trends[i]||[];
+    var recentHits=trend.slice(0,10).reduce(function(s,v){return s+v;},0);
+    balls+='<div style="margin-top:8px;text-align:center;">';
+    balls+='<div style="font:9px monospace;color:#333;margin-bottom:4px;">近20期出現趨勢（近→遠）</div>';
+    balls+=v8_sparkline(trend,ac);
+    balls+='<div style="font:9px monospace;color:#444;margin-top:4px;">近10期出現 <b style="color:'+ac+';">'+recentHits+'</b> 次</div>';
+    balls+='</div>';
     balls+='</div></div>';
   });
 
@@ -4929,13 +4994,15 @@ function v8_build(){
     var badge=r.hits===2?'<span style="font:700 10px monospace;color:#f9d44e;background:rgba(212,175,55,.15);padding:2px 8px;border-radius:4px;flex-shrink:0;">✓✓ 兩碼全中</span>':
               r.hits===1?'<span style="font:700 10px monospace;color:#5ae0b0;background:rgba(90,224,176,.1);padding:2px 8px;border-radius:4px;flex-shrink:0;">✓ 中1碼</span>':
                          '<span style="font:10px monospace;color:#2a2a2a;flex-shrink:0;">未中</span>';
-    hitRowsH+='<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.04);">';
-    hitRowsH+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'+
-               '<div style="font:11px monospace;color:#333;">'+ds+'</div>'+badge+'</div>';
+    var rowBg=r.hits===2?'rgba(212,175,55,.06)':r.hits===1?'rgba(90,224,176,.03)':'transparent';
+    var rowBorder=r.hits===2?'rgba(212,175,55,.2)':r.hits===1?'rgba(90,224,176,.1)':'rgba(255,255,255,.03)';
+    hitRowsH+='<div style="padding:10px 12px;margin-bottom:6px;border-radius:10px;border:1px solid '+rowBorder+';background:'+rowBg+';">';
+    hitRowsH+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">'+
+               '<div style="font:700 10px monospace;color:'+(r.hits>0?'#888':'#333')+';">'+ds+'</div>'+badge+'</div>';
     hitRowsH+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
-    hitRowsH+='<div style="font:9px monospace;color:#2a2a2a;flex-shrink:0;">AI預測</div>';
+    hitRowsH+='<div style="font:9px monospace;color:#333;flex-shrink:0;">AI</div>';
     hitRowsH+='<div style="display:flex;gap:4px;">'+predH+'</div>';
-    hitRowsH+='<div style="font:9px monospace;color:#2a2a2a;flex-shrink:0;">→ 開獎</div>';
+    hitRowsH+='<div style="font:9px monospace;color:#333;flex-shrink:0;">→</div>';
     hitRowsH+='<div style="display:flex;gap:4px;flex-wrap:wrap;">'+actH+'</div>';
     hitRowsH+='</div></div>';
   });
@@ -4943,6 +5010,38 @@ function v8_build(){
   /* 組合 HTML */
   var html=
     '<div id="__v8">'
+
+    /* TOP BANNER */
+    +'<div style="background:linear-gradient(135deg,rgba(212,175,55,.12) 0%,rgba(20,20,30,0) 60%,rgba(40,130,210,.08) 100%);border-bottom:1px solid rgba(255,255,255,.07);padding:20px 18px 18px;">'
+    +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">'
+    +'<div>'
+    +'<div style="font:800 22px/-apple-system,BlinkMacSystemFont,monospace;color:#fff;letter-spacing:-.01em;line-height:1.2;">AI 智能選號<br/><span style="color:#f9d44e;">精準預測引擎</span></div>'
+    +'<div style="font:11px monospace;color:#666;margin-top:8px;line-height:1.7;">多策略交叉驗證 · 真實開獎回測<br/>超越純隨機 <span style="color:'+(liftPct>0?'#5ae0b0':'#888')+';font-weight:700;">'+(liftPct>0?'+':'')+liftPct+'%</span> 命中率</div>'
+    +'</div>'
+    +'<div style="flex-shrink:0;text-align:center;">'
+    /* 命中率圓環 SVG */
+    +(function(){
+      var r=34,cx=40,cy=40,circ=2*Math.PI*r;
+      var fillA=circ*(1-accPct/100),fillR=circ*(1-rndPct/100);
+      return '<svg width="80" height="80" viewBox="0 0 80 80">'
+        /* 背景軌道 */
+        +'<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="6"/>'
+        /* 隨機基準弧（灰）*/
+        +'<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="6"'
+        +' stroke-dasharray="'+circ+'" stroke-dashoffset="'+fillR+'" stroke-linecap="round"'
+        +' transform="rotate(-90 '+cx+' '+cy+')"/>'
+        /* AI 命中弧（金/綠）*/
+        +'<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+(accPct>rndPct?'#f9d44e':'#5ae0b0')+'" stroke-width="6"'
+        +' stroke-dasharray="'+circ+'" stroke-dashoffset="'+fillA+'" stroke-linecap="round"'
+        +' transform="rotate(-90 '+cx+' '+cy+')"'
+        +' style="filter:drop-shadow(0 0 4px '+(accPct>rndPct?'rgba(249,212,78,.6)':'rgba(90,224,176,.6))+')"/>'
+        +'<text x="'+cx+'" y="'+(cy+5)+'" text-anchor="middle" fill="'+(accPct>rndPct?'#f9d44e':'#5ae0b0')+'" font-size="16" font-weight="800" font-family="monospace">'+accPct+'%</text>'
+        +'<text x="'+cx+'" y="'+(cy+18)+'" text-anchor="middle" fill="#444" font-size="8" font-family="monospace">中1碼率</text>'
+        +'</svg>';
+    })()
+    +'</div>'
+    +'</div>'
+    +'</div>'
 
     /* HEADER */
     +'<div style="padding:16px 18px 14px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.3);">'
@@ -5031,9 +5130,44 @@ function v8_build(){
     +'<div style="font:9px monospace;color:#2a2a2a;">/'+(hitHistory.length*2)+'顆</div>'
     +'</div>'
     +'</div>'
+    /* 準確率環形圖 */
+    +'<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:14px;background:linear-gradient(135deg,rgba(212,175,55,.06),rgba(90,224,176,.04));border:1px solid rgba(255,255,255,.06);border-radius:14px;">'
+    +(function(){
+      var r=30,cx=36,cy=36,circ=2*Math.PI*r;
+      var fillA=circ*(1-accPct/100),fillR=circ*(1-rndPct/100);
+      return '<svg width="72" height="72" viewBox="0 0 72 72" style="flex-shrink:0">'
+        +'<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="7"/>'
+        +'<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="7"'
+        +' stroke-dasharray="'+circ+'" stroke-dashoffset="'+fillR+'" stroke-linecap="round" transform="rotate(-90 '+cx+' '+cy+')"/>'
+        +'<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+(accPct>=rndPct?'#f9d44e':'#5ae0b0')+'" stroke-width="7"'
+        +' stroke-dasharray="'+circ+'" stroke-dashoffset="'+fillA+'" stroke-linecap="round" transform="rotate(-90 '+cx+' '+cy+')"'
+        +' style="filter:drop-shadow(0 0 5px '+(accPct>=rndPct?'rgba(249,212,78,.5)':'rgba(90,224,176,.5)')+')" />'
+        +'<text x="'+cx+'" y="'+(cy+4)+'" text-anchor="middle" fill="'+(accPct>=rndPct?'#f9d44e':'#5ae0b0')+'" font-size="14" font-weight="800" font-family="monospace">'+accPct+'%</text>'
+        +'</svg>';
+    })()
+    +'<div style="flex:1;">'
+    +'<div style="font:700 14px monospace;color:#ccc;margin-bottom:4px;">AI 整體命中率</div>'
+    +'<div style="font:10px monospace;color:#555;line-height:1.7;">'
+    +'近10期 中1碼以上 <b style="color:#5ae0b0;">'+hit1+'/'+hitHistory.length+'</b> 期<br/>'
+    +'兩碼全中 <b style="color:#f9d44e;">'+hit2+'/'+hitHistory.length+'</b> 期<br/>'
+    +'隨機基準約 <b style="color:#555;">'+rndPct+'%</b>'
+    +(liftPct>0?' · <b style="color:#5ae0b0;">超越 +'+liftPct+'%</b>':'')
+    +'</div>'
+    +'</div></div>'
     /* 逐期比對 */
     +'<div style="font:9px monospace;color:#333;margin-bottom:8px;letter-spacing:.05em;">━ 近期預測 vs 實際開獎比對 ━</div>'
     +hitRowsH
+    +'</div>'
+
+    /* STICKY CTA */
+    +'<div id="__v8cta" style="position:sticky;bottom:0;left:0;right:0;background:linear-gradient(180deg,rgba(13,17,23,0) 0%,rgba(13,17,23,.98) 18%);padding:18px 16px 20px;">'
+    +'<div style="background:linear-gradient(135deg,#c8940a,#f9d44e);border-radius:14px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 8px 40px rgba(212,175,55,.35),0 2px 8px rgba(0,0,0,.5);cursor:pointer;" id="__v8cta_btn">'
+    +'<div>'
+    +'<div style="font:800 15px monospace;color:#1a0e00;letter-spacing:.01em;">🔓 解鎖完整分析報告</div>'
+    +'<div style="font:10px monospace;color:rgba(40,20,0,.7);margin-top:2px;">查看全部策略 · 歷史回測 · 選號建議</div>'
+    +'</div>'
+    +'<div style="font:800 18px monospace;color:#1a0e00;">›</div>'
+    +'</div>'
     +'</div>'
 
     +'</div>';
@@ -5129,6 +5263,8 @@ function v8_init(){
       '.v8tab:not(.active):hover,.v8tab:not(.active):active{color:#ccc;background:rgba(255,255,255,.06);}',
       '.v8row{cursor:pointer;transition:background .15s;}',
       '.v8row:hover,.v8row:active{filter:brightness(1.3);}',
+      '@keyframes v8ctapulse{0%,100%{box-shadow:0 8px 40px rgba(212,175,55,.35),0 2px 8px rgba(0,0,0,.5)}50%{box-shadow:0 8px 60px rgba(212,175,55,.6),0 2px 8px rgba(0,0,0,.5)}}',
+      '#__v8cta_btn{animation:v8ctapulse 2.5s ease-in-out infinite;}',
       '#__v8dp{position:fixed;inset:0;z-index:9999;background:#0d1117;overflow-y:auto;animation:v8slide .3s ease both;}',
     ].join('\n');
     document.head.appendChild(_s);
