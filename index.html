@@ -3825,7 +3825,7 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 4. 重建策略命中率追蹤（v5.5：手機優化卡片列 + 進度條）── */
+  /* ── 4. 重建策略命中率追蹤（v7.4：顯示本期推薦號碼 + 大改造）── */
   function rebuildTracker() {
     var eng = window.__lottoEngine;
     if (!eng || !eng.runBT) return;
@@ -3838,8 +3838,12 @@ const summaryHitStats = useMemo(() => {
     var cardB = card.querySelector('.card-b');
     if (!cardB) return;
 
-    // v5.5：標記 cardB（不是 card），React 刷新 card-b 內容時屬性消失 → 自動重跑
     if (cardB.getAttribute('data-v5t') === 'done') return;
+
+    /* 取歷史資料供預測使用 */
+    var draws = [];
+    try { var br=window.__lottoSummaryBridge; draws=(br&&(br.draws||br.history))||[]; } catch(e){}
+    var hasPred = draws.length >= 15;
 
     var sids = ['S-01','S-02','S-03','S-04','S-05','S-06','S-07',
                 'S-08','S-11','S-12','S-13','S-14','S-15','S-ALL'];
@@ -3849,13 +3853,18 @@ const summaryHitStats = useMemo(() => {
         var d = eng.runBT(sid);
         if (!d || !d.st || !d.st.t) return;
         var st = d.st, t = st.t;
+        var pred = [];
+        if (hasPred && eng.fns && eng.fns[sid]) {
+          try { pred = eng.fns[sid](draws.slice(1), 0) || []; } catch(e) {}
+        }
         res.push({
           sid: sid,
           name: (eng.names && eng.names[sid]) || sid,
           avg: (st.h1 + st.h2*2) / t,
           h1p: (st.h1 + st.h2) / t,
           h2p: st.h2 / t,
-          t: t
+          t: t,
+          pred: pred.slice(0, 2)
         });
       } catch(e) {}
     });
@@ -3875,73 +3884,104 @@ const summaryHitStats = useMemo(() => {
       return (d>=0?'+':'')+d.toFixed(1)+'%';
     }
     function aboveBase(v, base) { return v > base * 1.02; }
+    function fmt2(n) { return String(n).padStart(2,'0'); }
 
-    // ── 基準說明列
-    var html = '<div style="padding:0 2px 14px;font:10px var(--mono);color:var(--fg-3);line-height:2;">';
-    html += '2碼預測隨機基準&nbsp;·&nbsp;';
-    html += '中1碼+ <b style="color:var(--fg-2)">'+pct(rnd1p)+'</b>&nbsp;&nbsp;';
-    html += '兩碼全中 <b style="color:var(--fg-2)">'+pct(rnd2p)+'</b>&nbsp;&nbsp;';
-    html += '期望命中 <b style="color:var(--fg-2)">'+rndAvg.toFixed(3)+'</b>';
-    html += '</div>';
+    /* 基準說明 */
+    var html = '<div style="margin-bottom:14px;padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);">';
+    html += '<div style="font:700 10px var(--mono);color:var(--fg-3);letter-spacing:.08em;margin-bottom:6px;">隨機基準（對照用）</div>';
+    html += '<div style="display:flex;gap:20px;flex-wrap:wrap;font:10px var(--mono);color:var(--fg-3);">';
+    html += '<span>中1碼以上 <b style="color:var(--fg-2)">'+pct(rnd1p)+'</b></span>';
+    html += '<span>兩碼全中 <b style="color:var(--fg-2)">'+pct(rnd2p)+'</b></span>';
+    html += '<span>期望命中 <b style="color:var(--fg-2)">'+rndAvg.toFixed(3)+'</b></span>';
+    html += '</div></div>';
 
-    // ── 策略卡片列
-    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+    /* 策略卡片列 */
+    html += '<div style="display:flex;flex-direction:column;gap:10px;">';
 
     var medals = ['🥇','🥈','🥉'];
     res.forEach(function(r, idx) {
       var isTop = idx < 3;
       var beatRnd = aboveBase(r.avg, rndAvg);
       var barW = maxAvg > 0 ? Math.min(100, Math.round(r.avg / maxAvg * 100)) : 0;
-      var barColor = isTop ? 'var(--gold)' : beatRnd ? 'var(--cyan)' : 'rgba(255,255,255,0.12)';
-      var avgColor = isTop ? 'var(--gold)' : beatRnd ? 'var(--cyan)' : 'var(--fg-3)';
-      var rowBg = isTop ? 'rgba(212,175,55,0.05)' : 'rgba(255,255,255,0.015)';
-      var rankDisp = idx < 3 ? medals[idx] : ('<span style="font:11px var(--mono);color:var(--fg-3);">'+(idx+1)+'</span>');
+      var barColor = isTop ? 'var(--gold,#d4a017)' : beatRnd ? '#5ae0b0' : 'rgba(255,255,255,0.12)';
+      var avgColor = isTop ? 'var(--gold,#d4a017)' : beatRnd ? '#5ae0b0' : 'var(--fg-3,#888)';
+      var borderColor = isTop ? 'rgba(212,175,55,0.3)' : beatRnd ? 'rgba(90,224,176,0.2)' : 'rgba(255,255,255,0.07)';
+      var rowBg = isTop ? 'rgba(212,175,55,0.04)' : 'rgba(255,255,255,0.015)';
+      var rankDisp = idx < 3 ? medals[idx] : '<span style="font:700 11px var(--mono);color:var(--fg-3);">'+(idx+1)+'</span>';
 
       html += '<div class="__v5_tr_row" data-sid="'+r.sid+'" style="';
-      html += 'border:1px solid '+(isTop?'rgba(212,175,55,0.25)':'var(--line)')+';';
-      html += 'border-radius:12px;padding:12px 14px;cursor:pointer;';
-      html += 'background:'+rowBg+';">';
+      html += 'border:1px solid '+borderColor+';border-radius:14px;padding:14px 16px;cursor:pointer;';
+      html += 'background:'+rowBg+';transition:background .15s;">';
 
-      // 第一行：排名 + 策略 + 平均命中分數
-      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">';
-      html += '<div style="min-width:24px;text-align:center;font-size:15px;line-height:1;">'+rankDisp+'</div>';
+      /* ── 頂列：排名 + 策略ID/名稱 + 本期推薦號碼 ── */
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">';
+
+      /* 排名 */
+      html += '<div style="min-width:26px;text-align:center;font-size:16px;line-height:1;flex-shrink:0;">'+rankDisp+'</div>';
+
+      /* 策略 ID + 名稱 */
       html += '<div style="flex:1;min-width:0;">';
-      html += '<span style="font:700 12px var(--mono);color:var(--gold);letter-spacing:0.05em;">'+r.sid+'</span>';
-      html += '<span style="font:11px var(--mono);color:var(--fg-3);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+r.name+'</span>';
-      html += '</div>';
-      html += '<div style="font:700 16px var(--mono);color:'+avgColor+';white-space:nowrap;">'+r.avg.toFixed(3)+'</div>';
+      html += '<div style="font:700 13px var(--mono);color:var(--gold,#d4a017);letter-spacing:.04em;">'+r.sid+'</div>';
+      html += '<div style="font:10px var(--mono);color:var(--fg-3,#888);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">'+r.name+'</div>';
       html += '</div>';
 
-      // 進度條
-      html += '<div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.07);margin-bottom:9px;">';
+      /* 本期推薦號碼（小球） */
+      html += '<div style="display:flex;gap:6px;flex-shrink:0;align-items:center;">';
+      if (r.pred && r.pred.length >= 2) {
+        var ballBgs = [
+          'radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)',
+          'radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)'
+        ];
+        var ballTcs = ['#2e1900','#001428'];
+        r.pred.forEach(function(n, bi) {
+          html += '<div style="width:38px;height:38px;border-radius:50%;background:'+ballBgs[bi]+';';
+          html += 'display:flex;align-items:center;justify-content:center;';
+          html += 'font:800 14px var(--mono);color:'+ballTcs[bi]+';';
+          html += 'box-shadow:0 3px 12px rgba(0,0,0,0.4);">'+fmt2(n)+'</div>';
+        });
+      } else {
+        html += '<div style="font:10px var(--mono);color:var(--fg-3,#888);">—</div>';
+      }
+      html += '</div>';
+
+      /* 箭頭 */
+      html += '<div style="color:var(--fg-3,#888);font-size:13px;flex-shrink:0;margin-left:4px;">›</div>';
+
+      html += '</div>'; /* ── 頂列結束 ── */
+
+      /* ── 進度條 ── */
+      html += '<div style="height:4px;border-radius:2px;background:rgba(255,255,255,0.07);margin-bottom:10px;">';
       html += '<div style="height:100%;width:'+barW+'%;border-radius:2px;background:'+barColor+';"></div>';
       html += '</div>';
 
-      // 第三行：中1碼+ 和 兩碼全中
-      html += '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
-      // 中1碼+
-      var c1 = aboveBase(r.h1p, rnd1p) ? 'var(--gold)' : 'var(--fg-3)';
-      html += '<span style="font:10px var(--mono);color:var(--fg-3);">中1碼+&nbsp;';
-      html += '<b style="color:'+c1+'">'+pct(r.h1p)+'</b>';
-      html += '<span style="color:'+(aboveBase(r.h1p,rnd1p)?'#5ae0b0':'rgba(255,255,255,0.3)');
-      html += ';font-size:9px;">&nbsp;('+diff(r.h1p,rnd1p)+')</span></span>';
-      // 兩碼全中
-      var c2 = aboveBase(r.h2p, rnd2p) ? 'var(--cyan)' : 'var(--fg-3)';
-      html += '<span style="font:10px var(--mono);color:var(--fg-3);">兩碼全中&nbsp;';
-      html += '<b style="color:'+c2+'">'+pct(r.h2p)+'</b>';
-      html += '<span style="color:'+(aboveBase(r.h2p,rnd2p)?'#5ae0b0':'rgba(255,255,255,0.3)');
-      html += ';font-size:9px;">&nbsp;('+diff(r.h2p,rnd2p)+')</span></span>';
-      html += '</div>';
+      /* ── 底列：命中率數字 ── */
+      html += '<div style="display:flex;gap:16px;flex-wrap:wrap;">';
 
-      html += '</div>'; // /__v5_tr_row
+      var c1 = aboveBase(r.h1p, rnd1p) ? '#5ae0b0' : 'var(--fg-3,#888)';
+      html += '<span style="font:10px var(--mono);color:var(--fg-3,#888);">中1碼以上 ';
+      html += '<b style="color:'+c1+'">'+pct(r.h1p)+'</b>';
+      var d1 = diff(r.h1p, rnd1p);
+      html += ' <span style="font-size:9px;color:'+(aboveBase(r.h1p,rnd1p)?'#5ae0b0':'rgba(255,255,255,0.25)')+';">('+d1+')</span></span>';
+
+      var c2 = aboveBase(r.h2p, rnd2p) ? '#5ae0b0' : 'var(--fg-3,#888)';
+      html += '<span style="font:10px var(--mono);color:var(--fg-3,#888);">兩碼全中 ';
+      html += '<b style="color:'+c2+'">'+pct(r.h2p)+'</b>';
+      var d2 = diff(r.h2p, rnd2p);
+      html += ' <span style="font-size:9px;color:'+(aboveBase(r.h2p,rnd2p)?'#5ae0b0':'rgba(255,255,255,0.25)')+';">('+d2+')</span></span>';
+
+      html += '<span style="font:10px var(--mono);color:var(--fg-3,#888);">期望 ';
+      html += '<b style="color:'+avgColor+'">'+r.avg.toFixed(3)+'</b></span>';
+
+      html += '</div>'; /* ── 底列結束 ── */
+
+      html += '</div>'; /* /__v5_tr_row */
     });
 
-    html += '</div>'; // 外層 flex column
-    html += '<div style="margin-top:12px;text-align:center;font:9px var(--mono);color:var(--fg-3);letter-spacing:0.08em;">點擊任一策略列 → 進入獨立詳細分析頁面</div>';
+    html += '</div>'; /* 外層 flex column */
+    html += '<div style="margin-top:14px;text-align:center;font:10px var(--mono);color:var(--fg-3,#888);letter-spacing:.06em;opacity:.7;">點擊任一策略列 → 進入獨立詳細分析頁面</div>';
 
     cardB.innerHTML = html;
 
-    // 策略命中率追蹤列 → 點擊進入獨立分析頁
     cardB.querySelectorAll('.__v5_tr_row[data-sid]').forEach(function(row) {
       row.addEventListener('click', function() {
         var sid = row.getAttribute('data-sid');
@@ -3951,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v7.2';
+  var V5_VERSION = 'v7.4';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -3972,22 +4012,22 @@ const summaryHitStats = useMemo(() => {
     var s = document.createElement('style');
     s.id = '__v7_css';
     s.textContent = [
-      /* 三重 CSS 保障：任何一個 selector 命中都隱藏 card-b */
-      '.card[data-v7] .card-b { display:none !important; }',
-      '.card[data-v7] > .card-b { display:none !important; }',
-      '[data-v7-cb] { display:none !important; }',
+      /* 完全隱藏 React 的預測卡（我們自己的獨立卡取代） */
+      '.card[data-v7-hide] { display:none !important; }',
       /* 球彈入動畫 */
       '@keyframes v7pop {',
-      '  from { transform:scale(0.5) translateY(16px); opacity:0; }',
-      '  to   { transform:scale(1)   translateY(0);    opacity:1; }',
+      '  0%   { transform:scale(0.4) translateY(24px); opacity:0; }',
+      '  70%  { transform:scale(1.08) translateY(-4px); }',
+      '  100% { transform:scale(1)   translateY(0);    opacity:1; }',
       '}',
-      '#__v7 .v7b { animation:v7pop 0.45s cubic-bezier(0.34,1.56,0.64,1) both; }',
-      '#__v7 .v7b:last-child { animation-delay:0.08s; }',
-      /* 策略詳情頁滑入/滑出 */
-      '@keyframes v7slide { from{transform:translateX(100%)} to{transform:translateX(0)} }',
-      '@keyframes v7slideout { from{transform:translateX(0)} to{transform:translateX(100%)} }',
-      /* 策略卡點擊提示 */
-      '.card[data-sid-click]:hover .card-h { color:var(--gold,#d4a017) !important; cursor:pointer; }',
+      '@keyframes v7fadein { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }',
+      /* 策略詳情頁 */
+      '@keyframes v7slide { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }',
+      '@keyframes v7slideout { from{transform:translateX(0);opacity:1} to{transform:translateX(100%);opacity:0} }',
+      /* 我們的預測卡樣式 */
+      '#__v7_pred { animation:v7fadein 0.4s ease both; }',
+      '#__v7_pred .v7ball { animation:v7pop 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }',
+      '#__v7_pred .v7ball:last-of-type { animation-delay:0.1s; }',
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -4055,180 +4095,113 @@ const summaryHitStats = useMemo(() => {
     };
   }
 
-  /* ── 建立面板 ─────────────────────────────────────────── */
-  function v7_buildPanel(predCard, res) {
-    /* 移除舊版殘留（v5/v6 的 #__v5_pp） */
-    ['__v5_pp','__v7'].forEach(function(id) {
-      var old = predCard.querySelector('#' + id);
-      if (old) old.parentNode.removeChild(old);
-    });
+  /* ══════════════════════════════════════════════════════════
+     v7.4 核心重設計
+     預測面板：完全獨立 div，插入 React card 之前
+     React 永遠不知道我們的 div 存在，不會干擾
+  ══════════════════════════════════════════════════════════ */
+  function v7_buildPred(res, insertBefore) {
+    function fmt(n) { return String(n).padStart(2,'0'); }
+    var top2 = res.top2, maxS = res.maxS, validN = res.validN;
 
-    function fmt(n) { return String(n).padStart(2, '0'); }
-
-    var top2   = res.top2;
-    var maxS   = res.maxS;
-    var validN = res.validN;
-
-    /* 球 HTML */
-    function ballHTML(item, idx) {
-      var conf   = Math.round(item.s / maxS * 100);
-      var isGold = idx === 0;
-      var ballBg = isGold
-        ? 'radial-gradient(circle at 38% 30%, #fffac0 0%, #f9d44e 30%, #c8940a 100%)'
-        : 'radial-gradient(circle at 38% 30%, #d8eeff 0%, #80bcf0 30%, #2166b0 100%)';
-      var shadow = isGold
-        ? '0 10px 40px rgba(248,200,0,0.55), 0 3px 10px rgba(0,0,0,0.5)'
-        : '0 10px 40px rgba(40,130,210,0.45), 0 3px 10px rgba(0,0,0,0.5)';
-      var txtClr = isGold ? '#2e1900' : '#001428';
-      var accClr = isGold ? '#f9d44e' : '#80bcf0';
-      var bar    = isGold
-        ? 'linear-gradient(90deg,#f9d44e,#e6a006)'
-        : 'linear-gradient(90deg,#80bcf0,#2166b0)';
-      var rank   = isGold ? '🥇 首選號碼' : '🥈 次選號碼';
-
+    function ball(item, idx) {
+      var conf = Math.round(item.s / maxS * 100);
+      var isG  = idx === 0;
+      var bg = isG ? 'radial-gradient(circle at 38% 30%,#fffac0 0%,#f9d44e 30%,#c8940a 100%)'
+                   : 'radial-gradient(circle at 38% 30%,#d8eeff 0%,#80bcf0 30%,#2166b0 100%)';
+      var sh = isG ? '0 12px 48px rgba(248,200,0,0.6),0 4px 12px rgba(0,0,0,0.5)'
+                   : '0 12px 48px rgba(40,130,210,0.5),0 4px 12px rgba(0,0,0,0.5)';
+      var tc = isG ? '#2e1900' : '#001428';
+      var ac = isG ? '#f9d44e' : '#80bcf0';
+      var bar = isG ? 'linear-gradient(90deg,#f9d44e,#e6a006)' : 'linear-gradient(90deg,#80bcf0,#2166b0)';
+      var lbl = isG ? '🥇 首選' : '🥈 次選';
       return (
-        '<div class="v7b" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:14px;">' +
-          '<div style="font:700 14px/1 var(--mono,monospace);color:' + accClr + ';letter-spacing:.04em;">' + rank + '</div>' +
-          /* 大球 */
-          '<div style="width:124px;height:124px;border-radius:50%;background:' + ballBg + ';' +
+        '<div class="v7ball" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:12px;">' +
+          '<div style="font:700 13px var(--mono,monospace);color:'+ac+';letter-spacing:.04em;">'+lbl+'</div>' +
+          '<div style="width:130px;height:130px;border-radius:50%;background:'+bg+';' +
           'display:flex;align-items:center;justify-content:center;' +
-          'font:900 46px/1 var(--mono,monospace);color:' + txtClr + ';' +
-          'box-shadow:' + shadow + ';">' + fmt(item.n) + '</div>' +
-          /* 信心條 */
-          '<div style="width:124px;">' +
-            '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">' +
+          'font:900 50px var(--mono,monospace);color:'+tc+';box-shadow:'+sh+';">'+fmt(item.n)+'</div>' +
+          '<div style="width:130px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">' +
               '<span style="font:11px var(--mono,monospace);color:var(--fg-3,#888);">AI 信心</span>' +
-              '<span style="font:800 16px var(--mono,monospace);color:' + accClr + ';">' + conf + '%</span>' +
+              '<span style="font:800 18px var(--mono,monospace);color:'+ac+';">'+conf+'%</span>' +
             '</div>' +
             '<div style="height:8px;border-radius:4px;background:rgba(255,255,255,0.1);overflow:hidden;">' +
-              '<div style="height:100%;width:' + conf + '%;background:' + bar + ';border-radius:4px;"></div>' +
+              '<div style="height:100%;width:'+conf+'%;background:'+bar+';border-radius:4px;"></div>' +
             '</div>' +
-            '<div style="margin-top:7px;font:11px var(--mono,monospace);color:var(--fg-3,#888);text-align:center;line-height:1.7;">' +
-              item.con + ' 個策略將此列為本期 TOP 2' +
+            '<div style="margin-top:6px;font:11px var(--mono,monospace);color:var(--fg-3,#888);text-align:center;">' +
+              item.con+' 個策略支持' +
             '</div>' +
           '</div>' +
         '</div>'
       );
     }
 
-    var panel = document.createElement('div');
-    panel.id = '__v7';
-    panel.innerHTML = (
-      /* 副標題 */
-      '<div style="padding:14px 20px 0;display:flex;align-items:center;justify-content:space-between;">' +
-        '<span style="font:700 12px var(--mono,monospace);color:var(--gold,#d4a017);letter-spacing:.08em;">⚡ AI 加權共識 · 本期最強推薦</span>' +
-        '<span style="font:11px var(--mono,monospace);color:var(--fg-3,#888);">' + validN + ' 個策略參與</span>' +
+    var wrap = document.createElement('div');
+    wrap.id  = '__v7_pred';
+    wrap.setAttribute('data-real','1');
+    wrap.style.cssText = 'border-radius:16px;background:var(--card,rgba(255,255,255,0.04));border:1px solid rgba(212,175,55,0.25);margin-bottom:16px;overflow:hidden;';
+    wrap.innerHTML = (
+      '<div style="padding:14px 20px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.06);">' +
+        '<div style="font:700 15px var(--mono,monospace);color:var(--fg,#eee);">下期預測號碼</div>' +
+        '<div style="font:11px var(--mono,monospace);color:var(--gold,#d4a017);background:rgba(212,175,55,0.12);border-radius:6px;padding:3px 10px;">⚡ AI 加權共識 · '+validN+' 策略</div>' +
       '</div>' +
-      /* 兩顆球 */
-      '<div style="padding:26px 16px 20px;display:flex;gap:12px;align-items:flex-start;">' +
-        ballHTML(top2[0], 0) +
-        '<div style="width:1px;background:rgba(255,255,255,0.08);align-self:stretch;margin:6px 4px 18px;flex-shrink:0;"></div>' +
-        ballHTML(top2[1], 1) +
+      '<div style="padding:32px 24px 28px;display:flex;gap:16px;align-items:flex-start;">' +
+        ball(top2[0],0) +
+        '<div style="width:1px;background:rgba(255,255,255,0.07);align-self:stretch;margin:8px 8px 20px;"></div>' +
+        ball(top2[1],1) +
       '</div>' +
-      /* 說明欄 */
-      '<div style="margin:0 16px 20px;padding:14px 16px;border-radius:10px;' +
-      'background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">' +
-        '<div style="font:700 11px var(--mono,monospace);color:var(--fg-2,#aaa);margin-bottom:9px;letter-spacing:.06em;">📖 怎麼解讀這個預測？</div>' +
-        '<div style="font:12px/2 var(--mono,monospace);color:var(--fg-3,#888);">' +
-          '• <b style="color:var(--fg-2,#aaa)">AI 信心</b>：這個號碼比其他候選號碼強多少（越高越好）<br>' +
-          '• <b style="color:var(--fg-2,#aaa)">策略列 TOP 2</b>：幾個策略認為這是本期最值得選的號碼<br>' +
-          '• 只有歷史命中率 <b style="color:var(--gold,#d4a017)">優於純隨機</b> 的策略才能投票，劣質策略自動排除' +
+      '<div style="padding:12px 20px 16px;background:rgba(0,0,0,0.2);border-top:1px solid rgba(255,255,255,0.05);">' +
+        '<div style="font:11px/1.9 var(--mono,monospace);color:var(--fg-3,#888);">' +
+          '💡 僅採用歷史命中率<b style="color:var(--fg-2,#ccc)"> 優於純隨機 </b>的策略投票 · 命中率越高、票數越重 · <b style="color:var(--gold,#d4a017)">點擊下方策略列</b>查看各策略詳細分析' +
         '</div>' +
       '</div>'
     );
 
-    var cardH = predCard.querySelector('.card-h');
-    if (cardH) {
-      predCard.insertBefore(panel, cardH.nextSibling);
-    } else {
-      predCard.appendChild(panel);
+    if (insertBefore && insertBefore.parentNode) {
+      insertBefore.parentNode.insertBefore(wrap, insertBefore);
     }
+    return wrap;
   }
 
   /* ── 主入口（每次 applyAll 呼叫）───────────────────────── */
   function v7_buildPrediction() {
-    /* Step 1：注入 CSS（只做一次） */
     v7_injectCSS();
 
-    /* Step 2：找預測卡（多重備用識別法） */
-    var predCard = null;
+    /* 找 React 預測卡 */
+    var reactCard = null;
     document.querySelectorAll('.card').forEach(function(c) {
-      if (predCard) return;
-      /* 方法 A：card-h 含「下期預測號碼」 */
+      if (reactCard) return;
       var h = c.querySelector('.card-h');
-      if (h && (h.textContent || '').includes('下期預測號碼')) {
-        predCard = c; return;
-      }
-      /* 方法 B：卡片最上層文字含「下期預測號碼」（h 可能在更深層） */
-      if ((c.textContent || '').slice(0, 80).includes('下期預測號碼')) {
-        predCard = c;
-      }
+      if (h && (h.textContent||'').includes('下期預測號碼')) reactCard = c;
+      else if (!reactCard && (c.textContent||'').slice(0,80).includes('下期預測號碼')) reactCard = c;
     });
-    if (!predCard) {
-      console.log('[v7] predCard NOT found');
-      return;
-    }
-    console.log('[v7] predCard found');
 
-    /* Step 3：標記 card + 隱藏 card-b（CSS + inline 雙保障）*/
-    predCard.setAttribute('data-v7', '1');
-    var allCB = predCard.querySelectorAll('.card-b');
-    allCB.forEach(function(cb) {
-      cb.setAttribute('data-v7-cb', '1');           /* CSS 靠這個 attr */
-      cb.style.setProperty('display','none','important'); /* inline 備援 */
-    });
-    /* 若 .card-b 選不到，強制抹除所有直接子節點（保留我們的 #__v7） */
-    if (!allCB.length) {
-      Array.from(predCard.children).forEach(function(ch) {
-        if (ch.id === '__v7' || ch.classList.contains('card-h')) return;
-        ch.style.setProperty('display','none','important');
-      });
-    }
+    /* 完全隱藏 React 的預測卡 */
+    if (reactCard) reactCard.setAttribute('data-v7-hide','1');
 
-    /* Step 4：面板已存在則停（card-b 已在 step3 重新隱藏，不需重建面板） */
-    if (predCard.querySelector('#__v7')) return;
+    /* 若已建好真實面板，跳過 */
+    var existing = document.getElementById('__v7_pred');
+    if (existing && existing.getAttribute('data-real') === '1') return;
+    if (existing) existing.parentNode.removeChild(existing);
 
-    /* Step 5：取引擎 & 歷史資料 */
+    /* 等引擎就緒 */
     var eng = window.__lottoEngine;
-    if (!eng || !eng.fns || !eng.runBT) {
-      console.log('[v7] engine not ready');
-      /* 先貼「計算中」佔位面板，避免畫面空白 */
-      v7_buildLoading(predCard);
-      return;
-    }
     var draws = [];
-    try {
-      var br = window.__lottoSummaryBridge;
-      draws = (br && (br.draws || br.history)) || [];
-    } catch(e) {}
-    if (draws.length < 10) {
-      console.log('[v7] draws too few:', draws.length);
-      v7_buildLoading(predCard);
+    try { var br=window.__lottoSummaryBridge; draws=(br&&(br.draws||br.history))||[]; } catch(e){}
+    if (!eng||!eng.fns||!eng.runBT||draws.length<10) {
+      console.log('[v7.4] not ready, draws='+draws.length);
       return;
     }
 
-    /* Step 6：加權共識計算 */
+    /* 計算加權共識 */
     var res = v7_computeTopTwo(eng, draws.slice(1));
-    if (!res) {
-      console.log('[v7] compute returned null');
-      v7_buildLoading(predCard);
-      return;
-    }
-    console.log('[v7] top2:', res.top2.map(function(x){return x.n;}));
+    if (!res) { console.log('[v7.4] compute null'); return; }
+    console.log('[v7.4] top2:', res.top2.map(function(x){return x.n;}));
 
-    /* Step 7：建面板 */
-    v7_buildPanel(predCard, res);
-  }
-
-  /* 資料還沒好時的佔位面板 */
-  function v7_buildLoading(predCard) {
-    if (predCard.querySelector('#__v7')) return;
-    var d = document.createElement('div');
-    d.id = '__v7';
-    d.innerHTML = '<div style="padding:40px;text-align:center;font:13px var(--mono,monospace);color:var(--fg-3,#888);">⏳ AI 正在分析歷史資料，請稍候…</div>';
-    var h = predCard.querySelector('.card-h');
-    if (h) predCard.insertBefore(d, h.nextSibling);
-    else predCard.appendChild(d);
+    /* 插入我們的面板（在 React card 之前，或 body 第一個 .card 之前） */
+    var anchor = reactCard || document.querySelector('.card');
+    v7_buildPred(res, anchor);
   }
   /* ══════════════════════════════════════════════════════════
      v7.2 策略獨立詳情頁系統
@@ -4546,7 +4519,7 @@ const summaryHitStats = useMemo(() => {
   mo.observe(document.documentElement, {childList:true, subtree:true});
 
   // 初始執行
-  [1000, 2200, 4000, 7000].forEach(function(d){ setTimeout(applyAll, d); });
+  [1000, 2200, 4000, 7000, 12000, 20000].forEach(function(d){ setTimeout(applyAll, d); });
 
 })();
 </script>
