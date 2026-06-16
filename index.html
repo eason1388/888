@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.1';
+var V8='v8.3';
 var _done=false;
 var _timer=null;
 
@@ -4569,8 +4569,22 @@ function getV8Draws(){
     '@keyframes v8fade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}',
     '@keyframes v8slide{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}',
     '@keyframes v8out{from{transform:translateX(0)}to{transform:translateX(100%)}}',
+    '@keyframes v8goldGlow{0%,100%{box-shadow:0 20px 70px rgba(248,200,0,.55),0 4px 16px rgba(0,0,0,.5)}50%{box-shadow:0 20px 100px rgba(248,200,0,.9),0 4px 16px rgba(0,0,0,.5),0 0 50px rgba(248,200,0,.35)}}',
+    '@keyframes v8blueGlow{0%,100%{box-shadow:0 20px 70px rgba(40,130,210,.5),0 4px 16px rgba(0,0,0,.5)}50%{box-shadow:0 20px 100px rgba(40,130,210,.85),0 4px 16px rgba(0,0,0,.5),0 0 50px rgba(40,130,210,.3)}}',
+    '@keyframes v8pulse{0%,100%{opacity:.7}50%{opacity:1}}',
     '#__v8 .v8ball{animation:v8pop .5s cubic-bezier(.34,1.56,.64,1) both}',
     '#__v8 .v8ball:nth-child(2){animation-delay:.12s}',
+    '#__v8 .v8gold-ball{animation:v8pop .5s cubic-bezier(.34,1.56,.64,1) both,v8goldGlow 2.8s ease-in-out 1s infinite;}',
+    '#__v8 .v8blue-ball{animation:v8pop .5s cubic-bezier(.34,1.56,.64,1) .14s both,v8blueGlow 2.8s ease-in-out 1.4s infinite;}',
+    '.v8chip{display:inline-block;padding:2px 7px;border-radius:4px;font:600 9px monospace;margin:2px;background:rgba(255,255,255,.06);color:#555;}',
+    '.v8chip.hot{background:rgba(212,175,55,.12);color:#b8860b;}',
+    '.v8chip.cool{background:rgba(40,130,210,.1);color:#4a90d9;}',
+    '.v8badge-elite{font:700 10px monospace;color:#f9d44e;background:rgba(212,175,55,.15);border:1px solid rgba(212,175,55,.3);padding:2px 8px;border-radius:4px;}',
+    '.v8badge-good{font:700 10px monospace;color:#5ae0b0;background:rgba(90,224,176,.08);border:1px solid rgba(90,224,176,.2);padding:2px 8px;border-radius:4px;}',
+    '.v8badge-avg{font:700 10px monospace;color:#555;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:2px 8px;border-radius:4px;}',
+    '.v8statbox{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 10px;text-align:center;flex:1;}',
+    '.v8live{display:inline-flex;align-items:center;gap:5px;font:700 9px monospace;color:#ff6060;letter-spacing:.08em;}',
+    '.v8live::before{content:"";width:7px;height:7px;border-radius:50%;background:#ff6060;animation:v8pulse 1.2s ease-in-out infinite;}',
     '.v8tab{cursor:pointer;padding:10px 18px;font:600 13px monospace;border-radius:8px;transition:.15s;user-select:none;white-space:nowrap;}',
     '.v8tab.active{background:rgba(212,175,55,.15);color:#f9d44e;}',
     '.v8tab:not(.active){color:#555;}',
@@ -4593,7 +4607,7 @@ function dif(v,b){var d=(v-b)*100;return(d>=0?'+':'')+d.toFixed(1)+'%';}
 /* ─ 加權共識演算法 ─ */
 function v8_compute(eng,draws){
   var rndAvg=eng.rndAvg||(2*5/39);
-  var scores={},hits={},validN=0,totalW=0;
+  var scores={},hits={},sidsMap={},validN=0,totalW=0;
   Object.keys(eng.fns||{}).forEach(function(sid){
     try{
       var bt=eng.runBT(sid);
@@ -4606,12 +4620,16 @@ function v8_compute(eng,draws){
       if(w<=0) return;
       totalW+=w;
       pred.slice(0,5).forEach(function(n,i){scores[n]=(scores[n]||0)+w*(5-i)/5;});
-      pred.slice(0,2).forEach(function(n){hits[n]=(hits[n]||0)+1;});
+      pred.slice(0,2).forEach(function(n){
+        hits[n]=(hits[n]||0)+1;
+        if(!sidsMap[n]) sidsMap[n]=[];
+        sidsMap[n].push(sid);
+      });
     }catch(e){}
   });
   if(!totalW) return null;
   Object.keys(hits).forEach(function(n){var ex=hits[n]-1;if(ex>0&&scores[n])scores[n]*=(1+ex*.08);});
-  var sorted=Object.keys(scores).map(function(n){return{n:+n,s:scores[n],con:hits[n]||0};}).sort(function(a,b){return b.s-a.s;});
+  var sorted=Object.keys(scores).map(function(n){return{n:+n,s:scores[n],con:hits[n]||0,sids:sidsMap[n]||[]};}).sort(function(a,b){return b.s-a.s;});
   if(sorted.length<2) return null;
   return{top2:sorted.slice(0,2),maxS:sorted[0].s,validN:validN};
 }
@@ -4810,17 +4828,25 @@ function v8_build(){
   pred.top2.forEach(function(item,i){
     var conf=Math.round(item.s/pred.maxS*100);
     var isG=i===0;
-    var bg=isG?'radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)':'radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)';
-    var sh=isG?'0 20px 70px rgba(248,200,0,.55),0 4px 16px rgba(0,0,0,.5)':'0 20px 70px rgba(40,130,210,.5),0 4px 16px rgba(0,0,0,.5)';
+    var bg=isG?'radial-gradient(circle at 35% 28%,#fffce8,#f9d44e 45%,#c8940a 80%)':'radial-gradient(circle at 35% 28%,#e8f4ff,#80bcf0 45%,#2166b0 80%)';
     var tc=isG?'#2e1900':'#001428',ac=isG?'#f9d44e':'#80bcf0';
     var bar=isG?'linear-gradient(90deg,#f9d44e,#e6a006)':'linear-gradient(90deg,#80bcf0,#2166b0)';
-    balls+='<div class="v8ball" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:12px;">';
-    balls+='<div style="font:700 12px monospace;color:'+ac+';letter-spacing:.04em;">'+(isG?'🥇 首選':'🥈 次選')+'</div>';
-    balls+='<div style="width:130px;height:130px;border-radius:50%;background:'+bg+';display:flex;align-items:center;justify-content:center;font:900 50px monospace;color:'+tc+';box-shadow:'+sh+';">'+fmt(item.n)+'</div>';
-    balls+='<div style="width:130px;">';
-    balls+='<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font:11px monospace;color:#555;">AI信心</span><span style="font:800 18px monospace;color:'+ac+';">'+conf+'%</span></div>';
-    balls+='<div style="height:7px;border-radius:4px;background:rgba(255,255,255,.1);"><div style="height:100%;width:'+conf+'%;background:'+bar+';border-radius:4px;"></div></div>';
-    balls+='<div style="margin-top:6px;font:10px monospace;color:#555;text-align:center;">'+item.con+' 個策略支持</div>';
+    var ballClass=isG?'v8gold-ball':'v8blue-ball';
+    /* 支持策略 chips（最多顯示5個）*/
+    var sidChips=(item.sids||[]).slice(0,5).map(function(s){return '<span class="v8chip '+(isG?'hot':'cool')+'">'+s+'</span>';}).join('');
+    if((item.sids||[]).length>5) sidChips+='<span class="v8chip">+'+((item.sids||[]).length-5)+'</span>';
+    balls+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;">';
+    balls+='<div style="font:700 11px monospace;color:'+ac+';letter-spacing:.08em;text-transform:uppercase;">'+(isG?'🥇 首選號碼':'🥈 次選號碼')+'</div>';
+    balls+='<div class="'+ballClass+'" style="width:140px;height:140px;border-radius:50%;background:'+bg+';display:flex;align-items:center;justify-content:center;font:900 56px monospace;color:'+tc+';">'+fmt(item.n)+'</div>';
+    balls+='<div style="width:145px;">';
+    balls+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">';
+    balls+='<span style="font:10px monospace;color:#444;">AI信心指數</span>';
+    balls+='<span style="font:800 20px monospace;color:'+ac+';">'+conf+'%</span>';
+    balls+='</div>';
+    balls+='<div style="height:6px;border-radius:3px;background:rgba(255,255,255,.08);">';
+    balls+='<div style="height:100%;width:'+conf+'%;background:'+bar+';border-radius:3px;transition:width .8s;"></div></div>';
+    balls+='<div style="margin-top:8px;font:9px monospace;color:#444;text-align:center;">共 '+item.con+' 個策略支持</div>';
+    balls+='<div style="margin-top:6px;text-align:center;">'+sidChips+'</div>';
     balls+='</div></div>';
   });
 
@@ -4830,29 +4856,41 @@ function v8_build(){
   var stratRows='';
   strats.list.forEach(function(r,i){
     var isTop=i<3;
+    /* 等級徽章 */
+    var tier=isTop?'<span class="v8badge-elite">🏆 精英</span>':r.beat?'<span class="v8badge-good">✓ 優良</span>':'<span class="v8badge-avg">— 一般</span>';
     var barW=maxAvg>0?Math.min(100,Math.round(r.avg/maxAvg*100)):0;
-    var barC=isTop?'#f9d44e':r.beat?'#5ae0b0':'rgba(255,255,255,.12)';
-    var avgC=isTop?'#f9d44e':r.beat?'#5ae0b0':'#666';
-    var rnk=i<3?medals[i]:'<span style="font:700 11px monospace;color:#444;">'+(i+1)+'</span>';
+    var barC=isTop?'linear-gradient(90deg,#f9d44e,#e6a006)':r.beat?'linear-gradient(90deg,#5ae0b0,#2e9f7a)':'rgba(255,255,255,.1)';
+    var avgC=isTop?'#f9d44e':r.beat?'#5ae0b0':'#555';
+    var rnk=i<3?medals[i]:'<span style="font:700 11px monospace;color:#333;">'+(i+1)+'</span>';
     var predBalls='';
     if(r.pred&&r.pred.length>=2){
       var bgs=['radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)','radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)'];
       var tcs=['#2e1900','#001428'];
-      r.pred.forEach(function(n,bi){predBalls+='<div style="width:38px;height:38px;border-radius:50%;background:'+bgs[bi]+';display:flex;align-items:center;justify-content:center;font:800 14px monospace;color:'+tcs[bi]+';box-shadow:0 3px 10px rgba(0,0,0,.4);">'+fmt(n)+'</div>';});
+      r.pred.forEach(function(n,bi){predBalls+='<div style="width:36px;height:36px;border-radius:50%;background:'+bgs[bi]+';display:flex;align-items:center;justify-content:center;font:800 13px monospace;color:'+tcs[bi]+';box-shadow:0 3px 10px rgba(0,0,0,.5);">'+fmt(n)+'</div>';});
     }
-    stratRows+='<div class="v8row'+(isTop?' top':r.beat?' beat':'')+'" data-sid="'+r.sid+'">';
-    stratRows+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">';
-    stratRows+='<div style="min-width:26px;text-align:center;font-size:16px;flex-shrink:0;">'+rnk+'</div>';
-    stratRows+='<div style="flex:1;min-width:0;"><div style="font:700 13px monospace;color:#f9d44e;">'+r.sid+'</div><div style="font:600 13px monospace;color:#888;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+r.name+'</div></div>';
-    stratRows+='<div style="display:flex;gap:6px;flex-shrink:0;">'+predBalls+'</div>';
-    stratRows+='<div style="color:#333;flex-shrink:0;margin-left:6px;font-size:15px;">›</div>';
+    stratRows+='<div class="v8row'+(isTop?' top':r.beat?' beat':'')+'" data-sid="'+r.sid+'" style="border-radius:12px;margin-bottom:10px;'+(isTop?'border:1px solid rgba(212,175,55,.2);background:rgba(212,175,55,.03);':r.beat?'border:1px solid rgba(90,224,176,.1);background:rgba(90,224,176,.02);':'border:1px solid rgba(255,255,255,.04);')+'">';
+    stratRows+='<div style="padding:12px 14px;">';
+    /* 頂部：排名+策略ID+等級+預測球 */
+    stratRows+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
+    stratRows+='<div style="min-width:24px;text-align:center;font-size:15px;flex-shrink:0;">'+rnk+'</div>';
+    stratRows+='<div style="flex:1;min-width:0;">';
+    stratRows+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
+    stratRows+='<span style="font:700 12px monospace;color:'+(isTop?'#f9d44e':r.beat?'#5ae0b0':'#666')+';">'+r.sid+'</span>';
+    stratRows+=tier;
     stratRows+='</div>';
-    stratRows+='<div style="height:4px;border-radius:2px;background:rgba(255,255,255,.07);margin-bottom:10px;"><div style="height:100%;width:'+barW+'%;border-radius:2px;background:'+barC+';"></div></div>';
-    stratRows+='<div style="display:flex;gap:14px;flex-wrap:wrap;font:10px monospace;color:#555;">';
-    stratRows+='<span>中1碼以上 <b style="color:'+(r.h1p>strats.rnd1p*1.02?'#5ae0b0':'#777')+'">'+pct(r.h1p)+'</b></span>';
-    stratRows+='<span>兩碼全中 <b style="color:'+(r.h2p>strats.rnd2p*1.02?'#5ae0b0':'#777')+'">'+pct(r.h2p)+'</b></span>';
-    stratRows+='<span>期望 <b style="color:'+avgC+'">'+r.avg.toFixed(3)+'</b></span>';
-    stratRows+='</div></div>';
+    stratRows+='<div style="font:600 12px monospace;color:#777;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+r.name+'</div>';
+    stratRows+='</div>';
+    stratRows+='<div style="display:flex;gap:5px;flex-shrink:0;">'+predBalls+'</div>';
+    stratRows+='<div style="color:#2a2a2a;flex-shrink:0;margin-left:4px;font-size:15px;">›</div>';
+    stratRows+='</div>';
+    /* 績效條 */
+    stratRows+='<div style="height:3px;border-radius:2px;background:rgba(255,255,255,.05);margin-bottom:9px;"><div style="height:100%;width:'+barW+'%;border-radius:2px;background:'+barC+';"></div></div>';
+    /* 指標 */
+    stratRows+='<div style="display:flex;gap:10px;flex-wrap:wrap;font:10px monospace;">';
+    stratRows+='<span style="color:#444;">中1碼 <b style="color:'+(r.h1p>strats.rnd1p*1.02?'#5ae0b0':'#555')+'">'+pct(r.h1p)+'</b></span>';
+    stratRows+='<span style="color:#444;">兩碼全中 <b style="color:'+(r.h2p>strats.rnd2p*1.02?'#5ae0b0':'#555')+'">'+pct(r.h2p)+'</b></span>';
+    stratRows+='<span style="color:#444;">期望值 <b style="color:'+avgC+'">'+r.avg.toFixed(3)+'</b></span>';
+    stratRows+='</div></div></div>';
   });
 
   /* 熱度格 HTML */
@@ -4907,35 +4945,58 @@ function v8_build(){
     '<div id="__v8">'
 
     /* HEADER */
-    +'<div style="padding:18px 20px 16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;">'
-    +'<div><div style="font:700 20px monospace;color:#f9d44e;letter-spacing:.02em;">🎯 今彩539</div>'
-    +'<div style="font:10px monospace;color:#444;margin-top:4px;">AI智能選號系統 · 真實資料分析 · '+(draws.length-1)+'期</div>'
-    +(nextDate?'<div style="font:700 10px monospace;color:#5ae0b0;margin-top:5px;">📅 下期開獎：'+nextDate+'</div>':'')
+    +'<div style="padding:16px 18px 14px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.3);">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;">'
+    +'<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#f9d44e,#c8940a);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎯</div>'
+    +'<div><div style="font:800 17px monospace;color:#f9d44e;letter-spacing:.02em;">今彩539 AI</div>'
+    +'<div style="font:10px monospace;color:#555;margin-top:1px;">智能選號系統 · '+pred.validN+'策略分析 · '+(draws.length-1)+'期資料</div>'
+    +'</div></div>'
+    +'<div style="text-align:right;flex-shrink:0;">'
+    +'<div style="font:700 9px monospace;color:#f9d44e;background:rgba(212,175,55,.15);border:1px solid rgba(212,175,55,.3);padding:3px 8px;border-radius:5px;margin-bottom:4px;">'+V8+'</div>'
+    +'<div class="v8live">LIVE</div>'
+    +'</div></div>'
+    +(nextDate?'<div style="background:rgba(90,224,176,.06);border:1px solid rgba(90,224,176,.15);border-radius:8px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;">'
+    +'<div style="font:700 10px monospace;color:#5ae0b0;">📅 下期開獎</div>'
+    +'<div style="font:700 11px monospace;color:#5ae0b0;">'+nextDate+'</div>'
+    +'<div id="__v8cntdwn" style="font:700 11px monospace;color:#888;">--:--:--</div>'
+    +'</div>':'')
     +'</div>'
-    +'<div style="font:700 11px monospace;color:#444;background:rgba(255,255,255,.04);padding:5px 12px;border-radius:6px;">'+V8+'</div>'
+
+    /* STATS BAR */
+    +'<div style="display:flex;gap:8px;padding:12px 16px;background:rgba(0,0,0,.2);border-bottom:1px solid rgba(255,255,255,.04);">'
+    +'<div class="v8statbox"><div style="font:800 20px monospace;color:#f9d44e;">'+(draws.length-1)+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">資料期數</div></div>'
+    +'<div class="v8statbox"><div style="font:800 20px monospace;color:#ccc;">'+pred.validN+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">有效策略</div></div>'
+    +'<div class="v8statbox"><div style="font:800 20px monospace;color:#5ae0b0;">'+hit1+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">中1碼/10期</div></div>'
+    +'<div class="v8statbox"><div style="font:800 20px monospace;color:#f9d44e;">'+hit2+'</div><div style="font:9px monospace;color:#444;margin-top:2px;">兩碼全中</div></div>'
     +'</div>'
 
     /* HERO 預測 */
-    +'<div style="padding:30px 20px 26px;background:linear-gradient(180deg,rgba(212,175,55,.05) 0%,transparent 100%);border-bottom:1px solid rgba(255,255,255,.06);">'
-    +'<div style="font:700 10px monospace;color:#555;letter-spacing:.14em;text-align:center;margin-bottom:4px;">━ 下期預測號碼 ━</div>'
-    +'<div style="font:10px monospace;color:#444;text-align:center;margin-bottom:28px;">AI加權共識 · '+pred.validN+' 個策略參與分析</div>'
-    +'<div style="display:flex;gap:12px;justify-content:center;align-items:flex-start;">'+balls+'</div>'
-    +'<div style="margin-top:22px;padding:12px 16px;background:rgba(0,0,0,.25);border-radius:10px;border:1px solid rgba(255,255,255,.04);font:11px/1.9 monospace;color:#444;text-align:center;">'
-    +'💡 只採用歷史命中率<b style="color:#777"> 優於純隨機 </b>的策略投票 · 命中率越高票數越重 · <b style="color:#666">點擊下方策略</b>查看詳細分析'
+    +'<div style="padding:28px 16px 22px;background:linear-gradient(180deg,rgba(212,175,55,.06) 0%,rgba(0,0,0,0) 100%);border-bottom:1px solid rgba(255,255,255,.05);">'
+    +'<div style="font:700 9px monospace;color:#555;letter-spacing:.18em;text-align:center;margin-bottom:6px;">━━  AI 加權共識預測  ━━</div>'
+    +'<div style="display:flex;gap:16px;justify-content:center;align-items:flex-start;">'+balls+'</div>'
+    +'<div style="margin-top:20px;padding:11px 14px;background:rgba(0,0,0,.3);border-radius:10px;border:1px solid rgba(255,255,255,.05);">'
+    +'<div style="font:700 9px monospace;color:#555;letter-spacing:.1em;margin-bottom:6px;">📌 推薦理由</div>'
+    +'<div style="font:11px/1.8 monospace;color:#444;">僅採用歷史命中率 <span style="color:#777;font-weight:700;">優於純隨機</span> 的策略參與投票 · 命中率越高権重越大 · 多策略共同看好同一號碼時信心加成</div>'
     +'</div>'
     +'</div>'
 
     /* TABS */
-    +'<div style="display:flex;gap:4px;padding:12px 16px 0;border-bottom:1px solid rgba(255,255,255,.06);overflow-x:auto;-webkit-overflow-scrolling:touch;">'
+    +'<div style="display:flex;gap:4px;padding:10px 14px 0;border-bottom:1px solid rgba(255,255,255,.06);overflow-x:auto;-webkit-overflow-scrolling:touch;">'
     +'<div class="v8tab active" data-tab="strat">📊 策略排行</div>'
     +'<div class="v8tab" data-tab="heat">🔢 號碼熱度</div>'
-    +'<div class="v8tab" data-tab="recent">📅 近期開獎</div>'
+    +'<div class="v8tab" data-tab="recent">📅 命中記錄</div>'
     +'</div>'
 
     /* TAB: 策略 */
-    +'<div id="__v8t_strat" style="padding:16px;">'
-    +'<div style="margin-bottom:14px;padding:10px 14px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);font:10px monospace;color:#555;">'
-    +'隨機基準：中1碼以上 <b style="color:#777">'+pct(strats.rnd1p)+'</b> · 兩碼全中 <b style="color:#777">'+pct(strats.rnd2p)+'</b> · 點擊策略查看詳細分析'
+    +'<div id="__v8t_strat" style="padding:14px;">'
+    +'<div style="display:flex;gap:10px;margin-bottom:12px;">'
+    +'<div style="flex:1;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);font:10px monospace;color:#555;">'
+    +'隨機基準<br/><b style="color:#666;font-size:11px;">中1碼 '+pct(strats.rnd1p)+'</b></div>'
+    +'<div style="flex:1;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);font:10px monospace;color:#555;">'
+    +'兩碼全中<br/><b style="color:#666;font-size:11px;">基準 '+pct(strats.rnd2p)+'</b></div>'
+    +'<div style="flex:1;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);font:10px monospace;color:#555;">'
+    +'參與分析<br/><b style="color:#ccc;font-size:11px;">'+pred.validN+' 個策略</b></div>'
     +'</div>'
     +stratRows
     +'</div>'
@@ -5002,6 +5063,32 @@ function v8_build(){
   document.querySelectorAll('#__v8 .v8row[data-sid]').forEach(function(row){
     row.addEventListener('click',function(){v8_detail(row.getAttribute('data-sid'),eng,draws);});
   });
+
+  /* 倒數計時器 */
+  if(nextDate){
+    (function startCountdown(){
+      function tick(){
+        var el=document.getElementById('__v8cntdwn');
+        if(!el) return;
+        /* 解析 nextDate 字串 yyyy/mm/dd (...) 20:30 */
+        var m=nextDate.match(/(\d{4})\/(\d+)\/(\d+)/);
+        if(!m){el.textContent='--:--:--';return;}
+        var target=new Date(+m[1],+m[2]-1,+m[3],20,30,0);
+        var diff=Math.floor((target-Date.now())/1000);
+        if(diff<=0){el.textContent='已開獎';return;}
+        var h=Math.floor(diff/3600),mn=Math.floor((diff%3600)/60),s=diff%60;
+        el.textContent=(h?h+'h ':'')+(mn<10&&h?'0':'')+mn+'m '+( s<10?'0':'')+s+'s';
+        el.style.color=diff<3600?'#ff6060':diff<10800?'#f9d44e':'#888';
+      }
+      tick();
+      var _tid=setInterval(tick,1000);
+      /* 當 UI 被移除時清除計時器 */
+      var obs=new MutationObserver(function(){
+        if(!document.getElementById('__v8cntdwn')){clearInterval(_tid);obs.disconnect();}
+      });
+      obs.observe(document.body,{childList:true,subtree:true});
+    })();
+  }
 }
 
 /* ─ 初始化 ─
@@ -5020,16 +5107,28 @@ function v8_init(){
       '@keyframes v8fade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}',
       '@keyframes v8slide{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}',
       '@keyframes v8out{from{transform:translateX(0)}to{transform:translateX(100%)}}',
+      '@keyframes v8goldGlow{0%,100%{box-shadow:0 20px 70px rgba(248,200,0,.55),0 4px 16px rgba(0,0,0,.5)}50%{box-shadow:0 20px 100px rgba(248,200,0,.9),0 4px 16px rgba(0,0,0,.5),0 0 50px rgba(248,200,0,.35)}}',
+      '@keyframes v8blueGlow{0%,100%{box-shadow:0 20px 70px rgba(40,130,210,.5),0 4px 16px rgba(0,0,0,.5)}50%{box-shadow:0 20px 100px rgba(40,130,210,.85),0 4px 16px rgba(0,0,0,.5),0 0 50px rgba(40,130,210,.3)}}',
+      '@keyframes v8pulse{0%,100%{opacity:.7}50%{opacity:1}}',
       '#__v8 .v8ball{animation:v8pop .5s cubic-bezier(.34,1.56,.64,1) both}',
       '#__v8 .v8ball:nth-child(2){animation-delay:.12s}',
+      '#__v8 .v8gold-ball{animation:v8pop .5s cubic-bezier(.34,1.56,.64,1) both,v8goldGlow 2.8s ease-in-out 1s infinite;}',
+      '#__v8 .v8blue-ball{animation:v8pop .5s cubic-bezier(.34,1.56,.64,1) .14s both,v8blueGlow 2.8s ease-in-out 1.4s infinite;}',
+      '.v8chip{display:inline-block;padding:2px 7px;border-radius:4px;font:600 9px monospace;margin:2px;background:rgba(255,255,255,.06);color:#555;}',
+      '.v8chip.hot{background:rgba(212,175,55,.12);color:#b8860b;}',
+      '.v8chip.cool{background:rgba(40,130,210,.1);color:#4a90d9;}',
+      '.v8badge-elite{font:700 10px monospace;color:#f9d44e;background:rgba(212,175,55,.15);border:1px solid rgba(212,175,55,.3);padding:2px 8px;border-radius:4px;}',
+      '.v8badge-good{font:700 10px monospace;color:#5ae0b0;background:rgba(90,224,176,.08);border:1px solid rgba(90,224,176,.2);padding:2px 8px;border-radius:4px;}',
+      '.v8badge-avg{font:700 10px monospace;color:#555;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:2px 8px;border-radius:4px;}',
+      '.v8statbox{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 10px;text-align:center;flex:1;}',
+      '.v8live{display:inline-flex;align-items:center;gap:5px;font:700 9px monospace;color:#ff6060;letter-spacing:.08em;}',
+      '.v8live::before{content:"";width:7px;height:7px;border-radius:50%;background:#ff6060;animation:v8pulse 1.2s ease-in-out infinite;}',
       '.v8tab{cursor:pointer;padding:10px 18px;font:600 13px monospace;border-radius:8px;transition:.15s;user-select:none;white-space:nowrap;}',
       '.v8tab.active{background:rgba(212,175,55,.15);color:#f9d44e;}',
       '.v8tab:not(.active){color:#555;}',
       '.v8tab:not(.active):hover,.v8tab:not(.active):active{color:#ccc;background:rgba(255,255,255,.06);}',
-      '.v8row{cursor:pointer;border-radius:14px;padding:14px 16px;transition:background .15s;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.015);margin-bottom:10px;}',
-      '.v8row:hover,.v8row:active{background:rgba(255,255,255,.055);}',
-      '.v8row.top{border-color:rgba(212,175,55,.3);background:rgba(212,175,55,.04);}',
-      '.v8row.beat{border-color:rgba(90,224,176,.2);}',
+      '.v8row{cursor:pointer;transition:background .15s;}',
+      '.v8row:hover,.v8row:active{filter:brightness(1.3);}',
       '#__v8dp{position:fixed;inset:0;z-index:9999;background:#0d1117;overflow-y:auto;animation:v8slide .3s ease both;}',
     ].join('\n');
     document.head.appendChild(_s);
