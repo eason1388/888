@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.6';
+var V8='v8.7';
 var _done=false;
 var _timer=null;
 
@@ -4552,6 +4552,10 @@ function getV8Draws(){
     return raw.map(function(r){
       var nums=r.draw||r.nums||r.numbers||[];
       return {nums:nums,draw:nums,period:r.period||'',year:r.year||0,month:r.month||0,day:r.day||0};
+    }).sort(function(a,b){
+      var da=a.year*10000+a.month*100+a.day;
+      var db=b.year*10000+b.month*100+b.day;
+      return db-da; /* 最新在前 */
     });
   }catch(e){return [];}
 }
