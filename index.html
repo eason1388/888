@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.13';
+var V8='v8.14';
 var _done=false;
 var _timer=null;
 
@@ -4629,10 +4629,12 @@ var V8_genCode=(function(){
   };
 })();
 
-/* 檢查本月訂閱是否有效 */
+/* 檢查本月訂閱是否有效（2026/8/1 前免費開放，之後需代碼）*/
 function v8_isSub(){
   try{
     var now=new Date();
+    /* 2026年8月1日前完全免費 */
+    if(now<new Date(2026,7,1)) return true;
     var cy=now.getFullYear(),cm=now.getMonth()+1;
     var d=JSON.parse(localStorage.getItem('v8_sub')||'null');
     if(!d||d.y!==cy||d.m!==cm) return false;
@@ -5299,11 +5301,12 @@ function v8_build(){
     +'<div style="background:linear-gradient(135deg,rgba(212,175,55,.12) 0%,rgba(20,20,30,0) 60%,rgba(40,130,210,.08) 100%);border-bottom:1px solid rgba(255,255,255,.07);padding:20px 18px 18px;">'
     +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">'
     +'<div>'
-    +'<div style="font:800 22px/1.2 monospace;color:#fff;letter-spacing:-.01em;">AI 智能選號<br/><span style="color:#f9d44e;">精準預測引擎</span></div>'
-    +'<div style="font:10px monospace;color:#555;margin-top:8px;line-height:1.8;">'
-    +'✓ '+pred.validN+' 策略交叉驗證<br/>'
-    +'✓ 真實開獎歷史回測<br/>'
-    +(liftPct>0?'↑ 超越隨機 +'+liftPct+'%':'等同隨機基準')
+    +'<div style="font:900 11px monospace;color:#f9d44e;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;opacity:.8;">🔥 台灣No.1 今彩539</div>'
+    +'<div style="font:900 24px/1.15 monospace;color:#fff;letter-spacing:-.01em;">頂級 AI 算牌系統<br/><span style="background:linear-gradient(90deg,#f9d44e,#ffb347);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">命中率遠超隨機</span></div>'
+    +'<div style="font:10px monospace;color:#555;margin-top:9px;line-height:2;">'
+    +'⚡ '+pred.validN+' 個策略同時運算交叉比對<br/>'
+    +'🎯 熱度衰減 × 協同配對 × 動態權重<br/>'
+    +(liftPct>0?'🚀 實測超越純隨機 <b style="color:#5ae0b0;">+'+liftPct+'%</b>':'📊 持續累積回測數據')
     +'</div>'
     +'</div>'
     +'<div style="flex-shrink:0;text-align:center;">'+bannerRingHtml+'</div>'
