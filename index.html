@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.12';
+var V8='v8.13';
 var _done=false;
 var _timer=null;
 
@@ -4657,51 +4657,58 @@ function v8_showSubGate(){
   var now=new Date();
   var months=['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
   var mStr=months[now.getMonth()]+' '+now.getFullYear();
+  /* 找原頁面插入點（跟 v8 panel 一樣注入到 body 末端） */
   var gate=document.createElement('div');
   gate.id='__v8gate';
-  gate.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.92);backdrop-filter:blur(12px);animation:v8fade .3s ease both;';
+  /* 跟 __v8 panel 同樣的定位方式：緊接在原頁面下方，不蓋住頁面 */
+  gate.style.cssText='position:relative;z-index:100;margin:0;font-family:monospace;';
   gate.innerHTML=
-    '<div style="width:100%;max-width:480px;padding:0 20px;text-align:center;">'
-    /* Logo */
-    +'<div style="font-size:48px;margin-bottom:16px;">🎯</div>'
-    +'<div style="font:900 26px monospace;color:#f9d44e;letter-spacing:.04em;margin-bottom:6px;">今彩539 AI 預測</div>'
-    +'<div style="font:12px monospace;color:#555;margin-bottom:32px;">頂級AI策略分析 · 每期精準預測</div>'
-    /* 月份標示 */
-    +'<div style="display:inline-block;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.25);border-radius:8px;padding:6px 18px;font:700 11px monospace;color:#f9d44e;margin-bottom:28px;">📅 '+mStr+' 訂閱期</div>'
-    /* 特色 */
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:28px;text-align:left;">'
-    +'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px 14px;">'
-    +'<div style="font:700 13px monospace;color:#5ae0b0;margin-bottom:4px;">✓ 8策略交叉驗證</div>'
-    +'<div style="font:10px monospace;color:#444;line-height:1.6;">近5/15期雙段動態<br>加權命中分析</div></div>'
-    +'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px 14px;">'
-    +'<div style="font:700 13px monospace;color:#5ae0b0;margin-bottom:4px;">✓ 號碼熱度追蹤</div>'
-    +'<div style="font:10px monospace;color:#444;line-height:1.6;">指數衰減熱度+<br>協同配對分析</div></div>'
-    +'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px 14px;">'
-    +'<div style="font:700 13px monospace;color:#5ae0b0;margin-bottom:4px;">✓ 完整5碼組合</div>'
-    +'<div style="font:10px monospace;color:#444;line-height:1.6;">AI最強共識號碼<br>每期更新</div></div>'
-    +'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px 14px;">'
-    +'<div style="font:700 13px monospace;color:#5ae0b0;margin-bottom:4px;">✓ 30期命中記錄</div>'
-    +'<div style="font:10px monospace;color:#444;line-height:1.6;">預測 vs 實際<br>透明比對驗證</div></div>'
+    '<div style="background:linear-gradient(180deg,#0d1117 0%,#0a0c10 100%);border-top:1px solid rgba(212,175,55,.15);padding:28px 16px 40px;">'
+    /* 標題區 */
+    +'<div style="text-align:center;margin-bottom:24px;">'
+    +'<div style="font-size:36px;margin-bottom:10px;">🎯</div>'
+    +'<div style="font:900 22px monospace;color:#f9d44e;margin-bottom:4px;">今彩539 AI 訂閱制</div>'
+    +'<div style="font:11px monospace;color:#444;">頂級策略分析 · 每期精準預測 · 透明回測驗證</div>'
     +'</div>'
-    /* 價格 */
-    +'<div style="background:linear-gradient(135deg,rgba(212,175,55,.12),rgba(212,175,55,.04));border:1px solid rgba(212,175,55,.3);border-radius:14px;padding:20px;margin-bottom:24px;">'
-    +'<div style="font:700 13px monospace;color:#888;margin-bottom:4px;">月費方案</div>'
-    +'<div style="font:900 42px monospace;color:#f9d44e;line-height:1;">$199</div>'
-    +'<div style="font:10px monospace;color:#555;margin-top:4px;">每月 · 每月1號更新代碼</div>'
+    /* 月份badge */
+    +'<div style="text-align:center;margin-bottom:20px;">'
+    +'<span style="display:inline-block;background:rgba(212,175,55,.1);border:1px solid rgba(212,175,55,.25);border-radius:8px;padding:5px 16px;font:700 11px monospace;color:#f9d44e;">📅 '+mStr+' 訂閱期</span>'
     +'</div>'
-    /* 輸入代碼 */
-    +'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px;margin-bottom:16px;">'
-    +'<div style="font:700 11px monospace;color:#888;margin-bottom:12px;text-align:left;">輸入本月訂閱代碼</div>'
-    +'<input id="__v8sub_input" placeholder="請輸入6位數代碼" maxlength="10" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:14px 16px;font:700 20px monospace;color:#fff;letter-spacing:.15em;text-align:center;outline:none;">'
-    +'<div id="__v8sub_err" style="font:10px monospace;color:#e05a5a;margin-top:8px;min-height:14px;text-align:center;"></div>'
-    +'<button id="__v8sub_btn" style="margin-top:10px;width:100%;padding:14px;background:linear-gradient(135deg,#f9d44e,#e6a006);border:none;border-radius:10px;font:800 14px monospace;color:#1a0e00;cursor:pointer;letter-spacing:.05em;">🔓 啟用本月訂閱</button>'
+    /* 特色 2x2 */
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;max-width:600px;margin-left:auto;margin-right:auto;">'
+    +'<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:12px;">'
+    +'<div style="font:700 12px monospace;color:#5ae0b0;margin-bottom:3px;">✓ 8策略交叉驗證</div>'
+    +'<div style="font:10px monospace;color:#3a3a3a;line-height:1.5;">近5/15期雙段動態加權</div></div>'
+    +'<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:12px;">'
+    +'<div style="font:700 12px monospace;color:#5ae0b0;margin-bottom:3px;">✓ 號碼熱度追蹤</div>'
+    +'<div style="font:10px monospace;color:#3a3a3a;line-height:1.5;">指數衰減 + 協同配對</div></div>'
+    +'<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:12px;">'
+    +'<div style="font:700 12px monospace;color:#5ae0b0;margin-bottom:3px;">✓ 完整5碼組合</div>'
+    +'<div style="font:10px monospace;color:#3a3a3a;line-height:1.5;">AI最強共識，每期更新</div></div>'
+    +'<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:12px;">'
+    +'<div style="font:700 12px monospace;color:#5ae0b0;margin-bottom:3px;">✓ 30期命中記錄</div>'
+    +'<div style="font:10px monospace;color:#3a3a3a;line-height:1.5;">預測 vs 實際透明比對</div></div>'
     +'</div>'
-    /* 購買連結 */
-    +'<div style="font:10px monospace;color:#333;line-height:1.8;">還沒有代碼？<br>'
-    +'<span style="color:#f9d44e;cursor:pointer;text-decoration:underline;" onclick="window.open(\'https://line.me/R/\',\'_blank\')">💬 點此 LINE 聯繫購買 $199/月</span></div>'
+    /* 價格 + 代碼輸入 並排 */
+    +'<div style="max-width:600px;margin:0 auto;display:flex;gap:12px;flex-wrap:wrap;">'
+    /* 左：價格 */
+    +'<div style="flex:1;min-width:140px;background:linear-gradient(135deg,rgba(212,175,55,.1),rgba(212,175,55,.03));border:1px solid rgba(212,175,55,.25);border-radius:14px;padding:20px 16px;text-align:center;">'
+    +'<div style="font:700 11px monospace;color:#666;margin-bottom:6px;">月費方案</div>'
+    +'<div style="font:900 38px monospace;color:#f9d44e;line-height:1;">$199</div>'
+    +'<div style="font:10px monospace;color:#444;margin-top:6px;">每月 · 每月1號更新代碼</div>'
+    +'<div style="margin-top:14px;font:10px monospace;color:#333;line-height:1.7;">還沒有代碼？<br>'
+    +'<span style="color:#f9d44e;cursor:pointer;" onclick="window.open(\'https://line.me/R/\',\'_blank\')">💬 LINE 聯繫購買</span></div>'
+    +'</div>'
+    /* 右：輸入框 */
+    +'<div style="flex:2;min-width:200px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:20px 16px;">'
+    +'<div style="font:700 11px monospace;color:#666;margin-bottom:12px;">輸入本月訂閱代碼</div>'
+    +'<input id="__v8sub_input" placeholder="請輸入6位數代碼" maxlength="10" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:13px 14px;font:700 18px monospace;color:#fff;letter-spacing:.12em;text-align:center;outline:none;">'
+    +'<div id="__v8sub_err" style="font:10px monospace;color:#e05a5a;margin-top:6px;min-height:14px;text-align:center;"></div>'
+    +'<button id="__v8sub_btn" style="margin-top:10px;width:100%;padding:13px;background:linear-gradient(135deg,#f9d44e,#e6a006);border:none;border-radius:9px;font:800 13px monospace;color:#1a0e00;cursor:pointer;">🔓 啟用本月訂閱</button>'
+    +'</div>'
+    +'</div>'
     +'</div>';
   document.body.appendChild(gate);
-  /* 事件 */
   var input=document.getElementById('__v8sub_input');
   var btn=document.getElementById('__v8sub_btn');
   var err=document.getElementById('__v8sub_err');
@@ -4709,18 +4716,17 @@ function v8_showSubGate(){
     var code=(input.value||'').trim();
     if(!code){err.textContent='請輸入代碼';return;}
     if(v8_activateSub(code)){
-      gate.style.opacity='0';
-      gate.style.transition='opacity .3s';
-      setTimeout(function(){gate.remove();v8_build();},300);
+      gate.remove();
+      v8_build();
     }else{
       err.textContent='代碼錯誤，請確認後重試';
       input.style.borderColor='rgba(224,90,90,.5)';
-      setTimeout(function(){input.style.borderColor='rgba(255,255,255,.12)';},1500);
+      setTimeout(function(){input.style.borderColor='rgba(255,255,255,.1)';},1500);
     }
   }
   btn.addEventListener('click',doVerify);
   input.addEventListener('keydown',function(e){if(e.key==='Enter')doVerify();});
-  input.focus();
+  setTimeout(function(){input.focus();},100);
 }
 
 /* ─ 加權共識演算法（三方法精準版）─ */
