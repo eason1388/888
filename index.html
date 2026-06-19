@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.5';
+var V8='v8.6';
 var _done=false;
 var _timer=null;
 
@@ -4982,33 +4982,44 @@ function v8_build(){
     var d=r.draw;
     var ds='';
     try{ds=(d.year||'')+'.'+String(d.month||'').padStart(2,'0')+'.'+String(d.day||'').padStart(2,'0');}catch(e){}
-    var bgs=['radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)','radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)'];
-    var tcs=['#2e1900','#001428'];
+    var predBgs=['radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)','radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)'];
+    var predTcs=['#2e1900','#001428'];
+    /* 預測球：top2，命中高亮 */
     var predH=r.pred.map(function(pn,bi){
       var hit=r.actual.indexOf(pn)>=0;
-      var bg=hit?bgs[bi]:'rgba(255,255,255,.07)';
-      var tc=hit?tcs[bi]:'#444';
-      var shadow=hit?'0 2px 10px rgba(0,0,0,.4)':'none';
-      return '<div style="width:32px;height:32px;border-radius:50%;background:'+bg+';display:flex;align-items:center;justify-content:center;font:700 11px monospace;color:'+tc+';box-shadow:'+shadow+';">'+fmt(pn)+'</div>';
+      var bg=hit?predBgs[bi]:'rgba(255,255,255,.07)';
+      var tc=hit?predTcs[bi]:'#555';
+      var ring=hit?'0 0 0 2px rgba(212,175,55,.6)':'none';
+      return '<div style="position:relative;width:34px;height:34px;border-radius:50%;background:'+bg+';display:flex;align-items:center;justify-content:center;font:800 12px monospace;color:'+tc+';box-shadow:'+ring+';">'
+        +(hit?'<div style="position:absolute;top:-4px;right:-2px;width:12px;height:12px;background:#5ae0b0;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 8px sans-serif;color:#000;">✓</div>':'')
+        +fmt(pn)+'</div>';
     }).join('');
+    /* 實際開獎球：5碼，命中的標色 */
     var actH=r.actual.map(function(an){
       var hit=r.pred.indexOf(an)>=0;
-      return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:'+(hit?'rgba(90,224,176,.18)':'rgba(255,255,255,.05)')+';font:700 11px monospace;color:'+(hit?'#5ae0b0':'#444')+';">'+fmt(an)+'</span>';
+      return '<div style="width:30px;height:30px;border-radius:50%;background:'+(hit?'rgba(90,224,176,.22)':'rgba(255,255,255,.05)')+';border:1px solid '+(hit?'rgba(90,224,176,.5)':'rgba(255,255,255,.06)')+';display:flex;align-items:center;justify-content:center;font:700 11px monospace;color:'+(hit?'#5ae0b0':'#3a3a3a')+';">'+fmt(an)+'</div>';
     }).join('');
-    var badge=r.hits===2?'<span style="font:700 10px monospace;color:#f9d44e;background:rgba(212,175,55,.15);padding:2px 8px;border-radius:4px;flex-shrink:0;">✓✓ 兩碼全中</span>':
-              r.hits===1?'<span style="font:700 10px monospace;color:#5ae0b0;background:rgba(90,224,176,.1);padding:2px 8px;border-radius:4px;flex-shrink:0;">✓ 中1碼</span>':
-                         '<span style="font:10px monospace;color:#2a2a2a;flex-shrink:0;">未中</span>';
+    var badge=r.hits===2?'<span style="font:700 10px monospace;color:#f9d44e;background:rgba(212,175,55,.15);padding:3px 8px;border-radius:4px;">✓✓ 兩碼全中</span>':
+              r.hits===1?'<span style="font:700 10px monospace;color:#5ae0b0;background:rgba(90,224,176,.1);padding:3px 8px;border-radius:4px;">✓ 中1碼</span>':
+                         '<span style="font:10px monospace;color:#2a2a2a;">未中</span>';
     var rowBg=r.hits===2?'rgba(212,175,55,.06)':r.hits===1?'rgba(90,224,176,.03)':'transparent';
-    var rowBorder=r.hits===2?'rgba(212,175,55,.2)':r.hits===1?'rgba(90,224,176,.1)':'rgba(255,255,255,.03)';
+    var rowBorder=r.hits===2?'rgba(212,175,55,.2)':r.hits===1?'rgba(90,224,176,.08)':'rgba(255,255,255,.04)';
     hitRowsH+='<div style="padding:10px 12px;margin-bottom:6px;border-radius:10px;border:1px solid '+rowBorder+';background:'+rowBg+';">';
-    hitRowsH+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">'+
-               '<div style="font:700 10px monospace;color:'+(r.hits>0?'#888':'#333')+';">'+ds+'</div>'+badge+'</div>';
-    hitRowsH+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
-    hitRowsH+='<div style="font:9px monospace;color:#333;flex-shrink:0;">AI</div>';
-    hitRowsH+='<div style="display:flex;gap:4px;">'+predH+'</div>';
-    hitRowsH+='<div style="font:9px monospace;color:#333;flex-shrink:0;">→</div>';
-    hitRowsH+='<div style="display:flex;gap:4px;flex-wrap:wrap;">'+actH+'</div>';
-    hitRowsH+='</div></div>';
+    /* 標題行：日期 + 中獎badge */
+    hitRowsH+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">'
+      +'<div style="font:700 10px monospace;color:'+(r.hits>0?'#666':'#2e2e2e')+';">'+ds+'</div>'
+      +badge+'</div>';
+    /* 預測行 */
+    hitRowsH+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">'
+      +'<div style="font:600 9px monospace;color:#444;min-width:28px;text-align:right;flex-shrink:0;">預測</div>'
+      +'<div style="display:flex;gap:4px;">'+predH+'</div>'
+      +'</div>';
+    /* 實際行 */
+    hitRowsH+='<div style="display:flex;align-items:center;gap:6px;">'
+      +'<div style="font:600 9px monospace;color:#444;min-width:28px;text-align:right;flex-shrink:0;">實際</div>'
+      +'<div style="display:flex;gap:4px;">'+actH+'</div>'
+      +'</div>'
+      +'</div>';
   });
 
   /* ─ 預計算複雜 HTML（避免 IIFE 嵌入 string concat 導致 ASI 問題）─ */
