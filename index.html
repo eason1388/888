@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.16';
+var V8='v8.17';
 var _done=false;
 var _timer=null;
 
@@ -5294,6 +5294,117 @@ function v8_build(){
     +'<text x="'+_rcx+'" y="'+(_rcy+4)+'" text-anchor="middle" fill="'+_rc+'" font-size="14" font-weight="800" font-family="monospace">'+accPct+'%</text>'
     +'</svg>';
 
+  /* ③ 最新一期分享卡 */
+  var shareCardHtml='';
+  if(hitHistory.length>0){
+    var sr=hitHistory[0];
+    var sd=sr.draw;
+    var sds='';
+    try{sds=(sd.year||'')+'.'+String(sd.month||'').padStart(2,'0')+'.'+String(sd.day||'').padStart(2,'0');}catch(e){}
+    var sBadge=sr.hits===2?'✓✓ 兩碼全中':sr.hits===1?'✓ 中1碼':'✗ 未中';
+    var sBadgeC=sr.hits===2?'#f9d44e':sr.hits===1?'#5ae0b0':'#444';
+    var sBg=sr.hits===2?'linear-gradient(135deg,rgba(212,175,55,.15),rgba(212,175,55,.04))':sr.hits===1?'linear-gradient(135deg,rgba(90,224,176,.1),rgba(90,224,176,.02))':'rgba(255,255,255,.02)';
+    var sBorder=sr.hits>=1?'rgba(212,175,55,.25)':'rgba(255,255,255,.06)';
+    var sPredH=sr.pred.map(function(pn,bi){
+      var hit=sr.actual.indexOf(pn)>=0;
+      var bg=hit?(bi===0?'radial-gradient(circle at 35% 28%,#fffac0,#f9d44e 50%,#c8940a)':'radial-gradient(circle at 35% 28%,#d8eeff,#80bcf0 50%,#2166b0)'):'rgba(255,255,255,.06)';
+      var tc=hit?(bi===0?'#2e1900':'#001428'):'#555';
+      return '<div style="position:relative;width:46px;height:46px;border-radius:50%;background:'+bg+';display:flex;align-items:center;justify-content:center;font:900 17px monospace;color:'+tc+';box-shadow:'+(hit?'0 3px 14px rgba(0,0,0,.5)':'none')+';flex-shrink:0;">'
+        +(hit?'<div style="position:absolute;top:-4px;right:-2px;width:14px;height:14px;background:#5ae0b0;border-radius:50%;display:flex;align-items:center;justify-content:center;font:800 9px sans-serif;color:#000;">✓</div>':'')
+        +fmt(pn)+'</div>';
+    }).join('');
+    var sActH=sr.actual.map(function(an){
+      var hit=sr.pred.indexOf(an)>=0;
+      return '<div style="width:36px;height:36px;border-radius:50%;background:'+(hit?'rgba(90,224,176,.2)':'rgba(255,255,255,.06)')+';border:1px solid '+(hit?'rgba(90,224,176,.5)':'rgba(255,255,255,.1)')+';display:flex;align-items:center;justify-content:center;font:700 13px monospace;color:'+(hit?'#5ae0b0':'#888')+';">'+fmt(an)+'</div>';
+    }).join('');
+    shareCardHtml=
+      '<div style="background:'+sBg+';border:1px solid '+sBorder+';border-radius:16px;padding:16px;margin-bottom:16px;position:relative;overflow:hidden;">'
+      +'<div style="position:absolute;top:0;right:0;width:80px;height:80px;background:radial-gradient(circle,rgba(212,175,55,.08),transparent 70%);pointer-events:none;"></div>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+      +'<div style="font:700 11px monospace;color:#555;">📅 最新一期 '+sds+'</div>'
+      +'<span style="font:800 11px monospace;color:'+sBadgeC+';background:rgba(0,0,0,.3);padding:3px 10px;border-radius:5px;">'+sBadge+'</span>'
+      +'</div>'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
+      +'<div style="font:600 9px monospace;color:#444;min-width:28px;">預測</div>'
+      +'<div style="display:flex;gap:6px;">'+sPredH+'</div>'
+      +'</div>'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'
+      +'<div style="font:600 9px monospace;color:#444;min-width:28px;">實際</div>'
+      +'<div style="display:flex;gap:5px;">'+sActH+'</div>'
+      +'</div>'
+      +'<div style="border-top:1px solid rgba(255,255,255,.05);padding-top:10px;display:flex;align-items:center;justify-content:space-between;">'
+      +'<div style="font:10px monospace;color:#333;">今彩539 AI算牌系統 · 長按截圖分享</div>'
+      +'<div style="font:700 10px monospace;color:#f9d44e;opacity:.6;">v8</div>'
+      +'</div>'
+      +'</div>';
+  }
+
+  /* ⑤ 歷史勝率走勢圖（SVG 折線）*/
+  var trendChartHtml='';
+  if(hitHistory.length>=5){
+    var W=340,H=80,padL=30,padR=10,padT=8,padB=20;
+    var n=hitHistory.length;
+    /* 計算每期的rolling 10期命中率 */
+    var ratePoints=[];
+    for(var ti=0;ti<n;ti++){
+      var window10=hitHistory.slice(ti,Math.min(ti+10,n));
+      var wHit=window10.filter(function(r){return r.hits>=1;}).length;
+      ratePoints.push(wHit/window10.length);
+    }
+    /* 反轉：最舊在左、最新在右 */
+    ratePoints=ratePoints.slice().reverse();
+    var rndRate=rndPct/100;
+    function tx(i){return padL+i*(W-padL-padR)/(n-1||1);}
+    function ty(v){return padT+(1-v)*(H-padT-padB);}
+    /* 隨機基準線 */
+    var rndY=ty(rndRate);
+    /* AI折線 */
+    var aiPath='M'+tx(0)+','+ty(ratePoints[0]);
+    for(var ti2=1;ti2<ratePoints.length;ti2++){
+      var cx2=(tx(ti2-1)+tx(ti2))/2;
+      aiPath+=' C'+cx2+','+ty(ratePoints[ti2-1])+' '+cx2+','+ty(ratePoints[ti2])+' '+tx(ti2)+','+ty(ratePoints[ti2]);
+    }
+    /* 面積填充 */
+    var areaPath=aiPath+' L'+tx(n-1)+','+(H-padB)+' L'+tx(0)+','+(H-padB)+' Z';
+    /* 最新點 */
+    var lastX=tx(n-1),lastY=ty(ratePoints[n-1]);
+    var lastRate=Math.round(ratePoints[n-1]*100);
+    var lineColor=ratePoints[n-1]>=rndRate?'#f9d44e':'#5ae0b0';
+    trendChartHtml=
+      '<div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px 14px 10px;margin-bottom:16px;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+      +'<div style="font:700 11px monospace;color:#888;">📈 AI命中率走勢（近'+n+'期 · 10期滾動）</div>'
+      +'<div style="font:700 11px monospace;color:'+lineColor+';">最新 '+lastRate+'%</div>'
+      +'</div>'
+      +'<svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible;">'
+      +'<defs>'
+      +'<linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">'
+      +'<stop offset="0%" stop-color="'+lineColor+'" stop-opacity=".25"/>'
+      +'<stop offset="100%" stop-color="'+lineColor+'" stop-opacity=".02"/>'
+      +'</linearGradient></defs>'
+      /* 格線 */
+      +'<line x1="'+padL+'" y1="'+ty(0.5)+'" x2="'+(W-padR)+'" y2="'+ty(0.5)+'" stroke="rgba(255,255,255,.04)" stroke-dasharray="3,3"/>'
+      +'<text x="'+(padL-3)+'" y="'+(ty(0.5)+4)+'" text-anchor="end" fill="#2a2a2a" font-size="8" font-family="monospace">50%</text>'
+      /* 隨機基準線 */
+      +'<line x1="'+padL+'" y1="'+rndY+'" x2="'+(W-padR)+'" y2="'+rndY+'" stroke="rgba(255,255,255,.15)" stroke-dasharray="4,3"/>'
+      +'<text x="'+(padL-3)+'" y="'+(rndY+4)+'" text-anchor="end" fill="#444" font-size="8" font-family="monospace">'+rndPct+'%</text>'
+      /* 0%線 */
+      +'<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="rgba(255,255,255,.06)"/>'
+      +'<text x="'+(padL-3)+'" y="'+(H-padB+4)+'" text-anchor="end" fill="#222" font-size="8" font-family="monospace">0%</text>'
+      /* 面積 */
+      +'<path d="'+areaPath+'" fill="url(#trendGrad)"/>'
+      /* AI折線 */
+      +'<path d="'+aiPath+'" fill="none" stroke="'+lineColor+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+      /* 最新點 */
+      +'<circle cx="'+lastX+'" cy="'+lastY+'" r="4" fill="'+lineColor+'" style="filter:drop-shadow(0 0 4px '+lineColor+')"/>'
+      /* 標籤 */
+      +'<text x="'+padL+'" y="'+(H-2)+'" fill="#2a2a2a" font-size="8" font-family="monospace">舊</text>'
+      +'<text x="'+(W-padR)+'" y="'+(H-2)+'" text-anchor="end" fill="#2a2a2a" font-size="8" font-family="monospace">新</text>'
+      +'<text x="'+((padL+W-padR)/2)+'" y="'+(H-2)+'" text-anchor="middle" fill="#333" font-size="8" font-family="monospace">── 隨機基準 '+rndPct+'% ──</text>'
+      +'</svg>'
+      +'</div>';
+  }
+
   /* 組合 HTML */
   var html=
     '<div id="__v8">'
@@ -5408,6 +5519,10 @@ function v8_build(){
     +(liftPct>0?' · <b style="color:#5ae0b0;">超越 +'+liftPct+'%</b>':'')
     +'</div>'
     +'</div></div>'
+    /* 最新一期分享卡 */
+    +shareCardHtml
+    /* 走勢圖 */
+    +trendChartHtml
     /* 逐期比對 */
     +'<div style="font:9px monospace;color:#333;margin-bottom:8px;letter-spacing:.05em;">━ 近期預測 vs 實際開獎比對 ━</div>'
     +hitRowsH
