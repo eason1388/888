@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.7';
+var V8='v8.8';
 var _done=false;
 var _timer=null;
 
@@ -4661,7 +4661,7 @@ function v8_strats(eng,draws){
       res.push({sid:sid,name:(eng.names&&eng.names[sid])||sid,avg:avg,h1p:(st.h1+st.h2)/t,h2p:st.h2/t,t:t,pred:pred,beat:avg>rndAvg*1.02});
     }catch(e){}
   });
-  res.sort(function(a,b){return b.avg-a.avg;});
+  res.sort(function(a,b){return parseInt(a.sid.replace('S-',''),10)-parseInt(b.sid.replace('S-',''),10);});
   return{list:res,rndAvg:rndAvg,rnd1p:rnd1p,rnd2p:rnd2p};
 }
 
@@ -4923,18 +4923,21 @@ function v8_build(){
     balls+='</div></div>';
   });
 
-  /* 策略列 HTML */
-  var medals=['🥇','🥈','🥉'];
-  var maxAvg=strats.list.length?strats.list[0].avg:1;
+  /* 策略列 HTML — 按 S 號排列，精英/優良徽章按 avg 判斷 */
+  var maxAvg=strats.list.reduce(function(m,r){return Math.max(m,r.avg);},0.001);
+  /* 找出 avg 前3名的 sid，用來標記精英 */
+  var top3sids=strats.list.slice().sort(function(a,b){return b.avg-a.avg;}).slice(0,3).map(function(r){return r.sid;});
   var stratRows='';
   strats.list.forEach(function(r,i){
-    var isTop=i<3;
+    var isTop=top3sids.indexOf(r.sid)>=0;
+    var topRank=top3sids.indexOf(r.sid); /* 0=金 1=銀 2=銅 */
+    var medals=['🥇','🥈','🥉'];
     /* 等級徽章 */
     var tier=isTop?'<span class="v8badge-elite">🏆 精英</span>':r.beat?'<span class="v8badge-good">✓ 優良</span>':'<span class="v8badge-avg">— 一般</span>';
     var barW=maxAvg>0?Math.min(100,Math.round(r.avg/maxAvg*100)):0;
     var barC=isTop?'linear-gradient(90deg,#f9d44e,#e6a006)':r.beat?'linear-gradient(90deg,#5ae0b0,#2e9f7a)':'rgba(255,255,255,.1)';
     var avgC=isTop?'#f9d44e':r.beat?'#5ae0b0':'#555';
-    var rnk=i<3?medals[i]:'<span style="font:700 11px monospace;color:#333;">'+(i+1)+'</span>';
+    var rnk=isTop?medals[topRank]:'<span style="font:700 11px monospace;color:#333;">'+(i+1)+'</span>';
     var predBalls='';
     if(r.pred&&r.pred.length>=2){
       var bgs=['radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)','radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)'];
