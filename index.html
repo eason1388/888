@@ -4534,7 +4534,7 @@ const summaryHitStats = useMemo(() => {
 (function(){
 'use strict';
 
-var V8='v8.10';
+var V8='v8.11';
 var _done=false;
 var _timer=null;
 
@@ -4614,43 +4614,76 @@ function fmt(n){return String(n).padStart(2,'0');}
 function pct(v){return(v*100).toFixed(1)+'%';}
 function dif(v,b){var d=(v-b)*100;return(d>=0?'+':'')+d.toFixed(1)+'%';}
 
-/* ─ 加權共識演算法（精準版）─ */
-/* 只用指定8個策略；整體回測 60% + 近15期實際命中動態權重 40% + 指數共識加成 */
+/* ─ 加權共識演算法（三方法精準版）─ */
+/* 方法1 號碼熱度衰減 + 方法2 近5期/近15期雙段動態 + 方法3 號碼對協同 */
 var V8_PRED_SIDS=['S-01','S-05','S-06','S-07','S-08','S-11','S-13','S-15'];
 function v8_compute(eng,draws,sidFilter){
   var rndAvg=eng.rndAvg||(2*5/39);
   var scores={},hits={},sidsMap={},validN=0,totalW=0;
   var useFilter=sidFilter&&sidFilter.length;
   var keys=Object.keys(eng.fns||{}).filter(function(sid){return !useFilter||sidFilter.indexOf(sid)>=0;});
+
+  /* ── 方法1：號碼熱度衰減（近30期，越近權重越高）── */
+  var heatMap={};
+  draws.slice(0,30).forEach(function(d,i){
+    (d.nums||d.draw||[]).forEach(function(n){
+      heatMap[n]=(heatMap[n]||0)+Math.exp(-i*0.15);
+    });
+  });
+  var maxHeat=Object.keys(heatMap).reduce(function(m,n){return Math.max(m,heatMap[n]);},0.001);
+
+  /* ── 方法3：號碼對協同出現矩陣（近50期）── */
+  var pairMap={};
+  draws.slice(0,Math.min(50,draws.length)).forEach(function(d){
+    var nums=d.nums||d.draw||[];
+    for(var a=0;a<nums.length;a++){
+      for(var b=a+1;b<nums.length;b++){
+        var k1=nums[a]+'_'+nums[b];
+        var k2=nums[b]+'_'+nums[a];
+        pairMap[k1]=(pairMap[k1]||0)+1;
+        pairMap[k2]=(pairMap[k2]||0)+1;
+      }
+    }
+  });
+
+  /* ── 方法2：策略權重 = 50%整體回測 + 35%近5期命中 + 15%近15期命中 ── */
   keys.forEach(function(sid){
     try{
-      /* 整體回測基礎權重 */
       var bt=eng.runBT(sid);
       if(!bt||!bt.st||!bt.st.t) return;
       var rate=(bt.st.h1+bt.st.h2*2)/bt.st.t;
       var baseW=Math.max(0,rate-rndAvg);
-      /* 近15期 walk-forward 實際命中率（動態權重）*/
-      var rHits=0,rTotal=0;
-      var checkN=Math.min(15,draws.length-11);
-      for(var ri=0;ri<checkN;ri++){
+      /* 近5期 walk-forward */
+      var h5=0,t5=0,n5=Math.min(5,draws.length-11);
+      for(var i5=0;i5<n5;i5++){
         try{
-          var hist=draws.slice(ri+1);
-          if(hist.length<10) break;
-          var rPred=(eng.fns[sid](hist.slice(1),0)||[]).slice(0,2);
-          var rActual=draws[ri].nums||draws[ri].draw||[];
-          rPred.forEach(function(pn){if(rActual.indexOf(pn)>=0)rHits++;});
-          rTotal+=2;
+          var sl5=draws.slice(i5+1);if(sl5.length<10)break;
+          var p5=(eng.fns[sid](sl5.slice(1),0)||[]).slice(0,2);
+          var a5=draws[i5].nums||draws[i5].draw||[];
+          p5.forEach(function(pn){if(a5.indexOf(pn)>=0)h5++;});
+          t5+=2;
         }catch(e){}
       }
-      var recentRate=rTotal>0?rHits/rTotal:0;
-      /* 合併權重：60% 整體 + 40% 近期動態 */
-      var w=baseW*0.6+Math.max(0,recentRate-(rndAvg/2))*0.4;
+      /* 近15期 walk-forward */
+      var h15=0,t15=0,n15=Math.min(15,draws.length-11);
+      for(var i15=0;i15<n15;i15++){
+        try{
+          var sl15=draws.slice(i15+1);if(sl15.length<10)break;
+          var p15=(eng.fns[sid](sl15.slice(1),0)||[]).slice(0,2);
+          var a15=draws[i15].nums||draws[i15].draw||[];
+          p15.forEach(function(pn){if(a15.indexOf(pn)>=0)h15++;});
+          t15+=2;
+        }catch(e){}
+      }
+      var r5=t5>0?h5/t5:0;
+      var r15=t15>0?h15/t15:0;
+      /* 三層合併：近期信號越短越重 */
+      var w=baseW*0.50+Math.max(0,r5-rndAvg*0.5)*0.35+Math.max(0,r15-rndAvg*0.5)*0.15;
       if(w<=0) w=0.001;
       var pred=eng.fns[sid](draws.slice(1),0);
       if(!pred||!pred.length) return;
       validN++;
       totalW+=w;
-      /* 位置衰減加分 */
       pred.slice(0,5).forEach(function(n,i){scores[n]=(scores[n]||0)+w*(5-i)/5;});
       pred.slice(0,2).forEach(function(n){
         hits[n]=(hits[n]||0)+1;
@@ -4660,12 +4693,39 @@ function v8_compute(eng,draws,sidFilter){
     }catch(e){}
   });
   if(!totalW) return null;
-  /* 指數共識加成：越多策略同意同一個號碼，加成越強 */
+
+  /* 指數共識加成 */
   Object.keys(hits).forEach(function(n){
     var con=hits[n];
     if(con>=2&&scores[n]) scores[n]*=Math.pow(1.18,con-1);
   });
-  var sorted=Object.keys(scores).map(function(n){return{n:+n,s:scores[n],con:hits[n]||0,sids:sidsMap[n]||[]};}).sort(function(a,b){return b.s-a.s;});
+
+  /* ── 方法3：協同配對加成 ── */
+  /* 取策略分最高的前5碼，找其歷史上的高頻同伴，給同伴加分 */
+  var topByStrat=Object.keys(scores).sort(function(a,b){return scores[b]-scores[a];}).slice(0,5);
+  var pairBase=Math.min(50,draws.length);
+  topByStrat.forEach(function(cn){
+    for(var nb=1;nb<=39;nb++){
+      var co=pairMap[cn+'_'+nb]||0;
+      if(co>=3&&nb!==+cn){
+        /* 同伴分 = 協同次數比例 × 候選號碼分數 × 0.12 */
+        scores[nb]=(scores[nb]||0)+co/pairBase*(scores[cn]||0)*0.12;
+      }
+    }
+  });
+
+  /* ── 方法1：策略分 × 0.65 + 熱度分 × 0.35 混合 ── */
+  var maxStrat=Object.keys(scores).reduce(function(m,n){return Math.max(m,scores[n]||0);},0.001);
+  var blended={};
+  Object.keys(scores).forEach(function(n){
+    var sn=(scores[n]||0)/maxStrat;
+    var hn=(heatMap[n]||0)/maxHeat;
+    blended[n]=sn*0.65+hn*0.35;
+  });
+
+  var sorted=Object.keys(blended).map(function(n){
+    return{n:+n,s:blended[n],con:hits[n]||0,sids:sidsMap[n]||[]};
+  }).sort(function(a,b){return b.s-a.s;});
   if(sorted.length<2) return null;
   return{top2:sorted.slice(0,2),top5:sorted.slice(0,5),maxS:sorted[0].s,validN:validN};
 }
