@@ -4891,10 +4891,7 @@ function v8_nextDate(draws){
     var todayMidnight=new Date(now.getFullYear(),now.getMonth(),now.getDate());
     if(dt<todayMidnight){
       dt=new Date(todayMidnight);
-      /* 若今天已過 20:30，換明天 */
-      if(now.getHours()>20||(now.getHours()===20&&now.getMinutes()>=30)){
-        dt.setDate(dt.getDate()+1);
-      }
+      /* 不依時鐘換日：只有當今天的開獎資料同步進來後，draws[0] 才會更新，dt 才自然推進到明天 */
       while(dt.getDay()===0||dt.getDay()===6) dt.setDate(dt.getDate()+1);
     }
     var days=['日','一','二','三','四','五','六'];
