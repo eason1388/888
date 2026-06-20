@@ -36,6 +36,31 @@ function parseRowsFromCards(html) {
   return rows;
 }
 
+// 通用解析器：不依賴特定 CSS 類別，直接找「期別：XXX • YYYY/M/D」再抓開獎號碼
+function parseRowsFromGeneric(html) {
+  const rows = [];
+  const periodPattern = /期別：\s*(\d+)\s*[•·]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/g;
+  const matches = [...html.matchAll(periodPattern)];
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i];
+    const [, period, year, month, day] = match;
+    const blockEnd = matches[i + 1]?.index ?? Math.min(match.index + 2000, html.length);
+    const block = html.slice(match.index, blockEnd);
+    // 找「開獎號碼」之後的數字段落
+    const numSection = block.match(/開獎號碼([\s\S]{0,400})/);
+    if (!numSection) continue;
+    const nums = [];
+    for (const m of numSection[1].matchAll(/\b(\d{1,2})\b/g)) {
+      const n = Number(m[1]);
+      if (n >= 1 && n <= 39 && !nums.includes(n)) nums.push(n);
+      if (nums.length === 5) break;
+    }
+    if (nums.length !== 5) continue;
+    rows.push([Number(year), Number(month), Number(day), ...nums, normalizePeriod(period)]);
+  }
+  return rows;
+}
+
 function uniqueSortedRows(rows) {
   const map = new Map();
   for (const row of rows) {
@@ -62,7 +87,8 @@ async function main() {
   const html = await response.text();
   const scrapedRows = uniqueSortedRows([
     ...parseRowsFromItemList(html),
-    ...parseRowsFromCards(html)
+    ...parseRowsFromCards(html),
+    ...parseRowsFromGeneric(html)
   ]);
 
   if (!scrapedRows.length) {
