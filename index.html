@@ -4199,6 +4199,20 @@ const summaryHitStats = useMemo(() => {
     if (!res) { console.log('[v7.4] compute null'); return; }
     console.log('[v7.4] top2:', res.top2.map(function(x){return x.n;}));
 
+    /* 儲存本次預測（只在首次，不覆蓋舊預測） */
+    try{
+      var _nd=v8_nextDate(draws);
+      var _mv=_nd&&_nd.match(/(\d{4})\/(\d+)\/(\d+)/);
+      if(_mv){
+        var _dk2=_mv[1]+'-'+String(_mv[2]).padStart(2,'0')+'-'+String(_mv[3]).padStart(2,'0');
+        var _log2=JSON.parse(localStorage.getItem('lotto_pred_log')||'{}');
+        if(!_log2[_dk2]){
+          _log2[_dk2]=res.top2.map(function(x){return x.n;});
+          localStorage.setItem('lotto_pred_log',JSON.stringify(_log2));
+        }
+      }
+    }catch(e){}
+
     /* 插入我們的面板（在 React card 之前，或 body 第一個 .card 之前） */
     var anchor = reactCard || document.querySelector('.card');
     v7_buildPred(res, anchor);
@@ -4899,17 +4913,26 @@ function v8_nextDate(draws){
   }catch(e){return '';}
 }
 
-/* ─ 近期命中紀錄（walk-forward）─ */
+/* ─ 近期命中紀錄（walk-forward，優先使用已儲存的真實預測）─ */
 function v8_recentHits(eng,draws,count){
+  var savedPreds={};
+  try{savedPreds=JSON.parse(localStorage.getItem('lotto_pred_log')||'{}');}catch(e){}
   var out=[];
   var n=Math.min(count||10,draws.length-11);
   for(var i=0;i<n;i++){
     try{
       var hist=draws.slice(i+1);
       if(hist.length<10) break;
-      var pred=v8_compute(eng,hist,V8_PRED_SIDS);
       var actual=(draws[i].nums||draws[i].draw||[]).slice();
-      var predNums=pred?pred.top2.map(function(p){return p.n;}):[0,0];
+      var d=draws[i];
+      var dk=d.year+'-'+String(d.month||1).padStart(2,'0')+'-'+String(d.day||1).padStart(2,'0');
+      var predNums;
+      if(savedPreds[dk]&&savedPreds[dk].length>=2){
+        predNums=savedPreds[dk]; /* 使用當時儲存的真實預測 */
+      }else{
+        var pred=v8_compute(eng,hist,V8_PRED_SIDS);
+        predNums=pred?pred.top2.map(function(p){return p.n;}):[0,0];
+      }
       var hits=predNums.filter(function(pn){return actual.indexOf(pn)>=0;}).length;
       out.push({draw:draws[i],pred:predNums,actual:actual,hits:hits});
     }catch(e){}
@@ -5077,6 +5100,20 @@ function v8_build(){
   var heat=v8_heat(draws);
   var recent=draws.slice(1,21);
   var nextDate=v8_nextDate(draws);
+
+  /* 儲存本次預測（只在首次，不覆蓋舊預測） */
+  try{
+    var _m=nextDate.match(/(\d{4})\/(\d+)\/(\d+)/);
+    if(_m){
+      var _dk=_m[1]+'-'+String(_m[2]).padStart(2,'0')+'-'+String(_m[3]).padStart(2,'0');
+      var _log=JSON.parse(localStorage.getItem('lotto_pred_log')||'{}');
+      if(!_log[_dk]){
+        _log[_dk]=pred.top2.map(function(x){return x.n;});
+        localStorage.setItem('lotto_pred_log',JSON.stringify(_log));
+      }
+    }
+  }catch(e){}
+
   var hitHistory=v8_recentHits(eng,draws,30);
   var hit1=hitHistory.filter(function(r){return r.hits>=1;}).length;
   var hit2=hitHistory.filter(function(r){return r.hits===2;}).length;
