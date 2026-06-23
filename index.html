@@ -3825,7 +3825,7 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 4. 重建策略命中率追蹤（v7.4：顯示本期推薦號碼 + 大改造）── */
+  /* ── 4. 重建策略命中率追蹤（v7.5：顯示本期推薦號碼 + 大改造）── */
   function rebuildTracker() {
     var eng = window.__lottoEngine;
     if (!eng || !eng.runBT) return;
@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v7.4';
+  var V5_VERSION = 'v7.5';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -4096,7 +4096,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ══════════════════════════════════════════════════════════
-     v7.4 核心重設計
+     v7.5 核心重設計
      預測面板：完全獨立 div，插入 React card 之前
      React 永遠不知道我們的 div 存在，不會干擾
   ══════════════════════════════════════════════════════════ */
@@ -4190,14 +4190,14 @@ const summaryHitStats = useMemo(() => {
     var draws = [];
     try { var br=window.__lottoSummaryBridge; draws=(br&&(br.draws||br.history))||[]; } catch(e){}
     if (!eng||!eng.fns||!eng.runBT||draws.length<10) {
-      console.log('[v7.4] not ready, draws='+draws.length);
+      console.log('[v7.5] not ready, draws='+draws.length);
       return;
     }
 
     /* 計算加權共識 */
     var res = v7_computeTopTwo(eng, draws.slice(1));
-    if (!res) { console.log('[v7.4] compute null'); return; }
-    console.log('[v7.4] top2:', res.top2.map(function(x){return x.n;}));
+    if (!res) { console.log('[v7.5] compute null'); return; }
+    console.log('[v7.5] top2:', res.top2.map(function(x){return x.n;}));
 
     /* 儲存本次預測（只在首次，不覆蓋舊預測） */
     try{
@@ -5103,6 +5103,46 @@ function v8_detail(sid,eng,draws){
     allBalls+='<div style="aspect-ratio:1;border-radius:50%;background:'+bg2+';display:flex;align-items:center;justify-content:center;font:700 12px monospace;color:'+tc2+';">'+fmt(j)+'</div>';
   }
 
+  /* ── 近30期 per-strategy 預測 vs 實際 ── */
+  var dpHitRowsH='';
+  var dpH1=0,dpH2=0,dpN=Math.min(30,draws.length-6);
+  if(eng.fns&&eng.fns[sid]){
+    for(var di=0;di<dpN;di++){
+      try{
+        var dHist=draws.slice(di+1);
+        if(dHist.length<5) break;
+        var dPredArr=eng.fns[sid](dHist,0)||[];
+        var dTop2=[dPredArr[0],dPredArr[1]].filter(function(x){return x!=null;});
+        var dDraw=draws[di];
+        var dDs='';
+        try{dDs=(dDraw.year||'')+'.'+ String(dDraw.month||'').padStart(2,'0')+'.'+ String(dDraw.day||'').padStart(2,'0');}catch(ex){}
+        var dActual=(dDraw.nums||dDraw.draw||[]).slice();
+        var dHits=dTop2.filter(function(pn){return dActual.indexOf(pn)>=0;}).length;
+        if(dHits===2) dpH2++; else if(dHits===1) dpH1++;
+        var dPBgs=['radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)','radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)'];
+        var dPTcs=['#2e1900','#001428'];
+        var dPredH=dTop2.map(function(pn,bi){
+          var hit=dActual.indexOf(pn)>=0;
+          var dck=hit?'<div style="position:absolute;top:-3px;right:-2px;width:10px;height:10px;background:#5ae0b0;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 7px sans-serif;color:#000;">✓</div>':'';
+          return '<div style="position:relative;width:30px;height:30px;border-radius:50%;background:'+(hit?dPBgs[bi]:'rgba(255,255,255,.13)')+';display:flex;align-items:center;justify-content:center;font:800 11px monospace;color:'+(hit?dPTcs[bi]:'#ddd')+';box-shadow:'+(hit?'0 0 0 2px rgba(212,175,55,.6)':'none')+';">'+dck+fmt(pn)+'</div>';
+        }).join('');
+        var dActH=dActual.map(function(an){
+          var hit=dTop2.indexOf(an)>=0;
+          return '<div style="width:26px;height:26px;border-radius:50%;background:'+(hit?'rgba(90,224,176,.22)':'rgba(255,255,255,.11)')+';border:1px solid '+(hit?'rgba(90,224,176,.5)':'rgba(255,255,255,.28)')+';display:flex;align-items:center;justify-content:center;font:700 10px monospace;color:'+(hit?'#5ae0b0':'#ccc')+';">'+fmt(an)+'</div>';
+        }).join('');
+        var dBadge=dHits===2?'<span style="font:700 9px monospace;color:#f9d44e;background:rgba(212,175,55,.15);padding:2px 6px;border-radius:4px;">✓✓ 兩碼全中</span>':dHits===1?'<span style="font:700 9px monospace;color:#5ae0b0;background:rgba(90,224,176,.1);padding:2px 6px;border-radius:4px;">✓ 中1碼</span>':'<span style="font:9px monospace;color:#777;">未中</span>';
+        var dRowBg=dHits===2?'rgba(212,175,55,.06)':dHits===1?'rgba(90,224,176,.03)':'transparent';
+        var dRowBdr=dHits===2?'rgba(212,175,55,.2)':dHits===1?'rgba(90,224,176,.08)':'rgba(255,255,255,.04)';
+        dpHitRowsH+='<div style="padding:8px 10px;margin-bottom:5px;border-radius:8px;border:1px solid '+dRowBdr+';background:'+dRowBg+';">'
+          +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;"><div style="font:700 10px monospace;color:'+(dHits>0?'#bbb':'#999')+';">'+dDs+'</div>'+dBadge+'</div>'
+          +'<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;"><div style="font:600 9px monospace;color:#888;min-width:26px;text-align:right;flex-shrink:0;">預測</div><div style="display:flex;gap:3px;">'+dPredH+'</div></div>'
+          +'<div style="display:flex;align-items:center;gap:5px;"><div style="font:600 9px monospace;color:#888;min-width:26px;text-align:right;flex-shrink:0;">實際</div><div style="display:flex;gap:3px;">'+dActH+'</div></div>'
+          +'</div>';
+      }catch(ex){}
+    }
+  }
+  var dpHitPct=dpN>0?Math.round((dpH1+dpH2)/dpN*100):0;
+
   var page=document.createElement('div');
   page.id='__v8dp';
   page.innerHTML=
@@ -5125,6 +5165,13 @@ function v8_detail(sid,eng,draws){
     +'<div style="margin-bottom:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:16px;">'
     +'<div style="font:700 10px monospace;color:#555;letter-spacing:.08em;margin-bottom:8px;">策略說明</div>'
     +'<div style="font:13px/1.8 -apple-system,sans-serif;color:#9aacbb;">'+si.desc+'</div>'
+    +'</div>'
+    +'<div style="margin-bottom:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:16px;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+    +'<div style="font:700 10px monospace;color:#aaa;letter-spacing:.08em;">📅 近30期預測 vs 實際開獎</div>'
+    +'<div style="font:700 12px monospace;color:'+(dpHitPct>=30?'#5ae0b0':'#f9d44e')+';">中1碼率 '+dpHitPct+'%</div>'
+    +'</div>'
+    +dpHitRowsH
     +'</div>'
     +'<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:16px;">'
     +'<div style="font:700 10px monospace;color:#555;letter-spacing:.08em;margin-bottom:10px;">號碼排名（金=首選 · 藍=次選 · 綠=前5）</div>'
