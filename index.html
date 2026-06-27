@@ -3825,7 +3825,7 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 4. 重建策略命中率追蹤（v7.5：顯示本期推薦號碼 + 大改造）── */
+  /* ── 4. 重建策略命中率追蹤（v7.7：顯示本期推薦號碼 + 大改造）── */
   function rebuildTracker() {
     var eng = window.__lottoEngine;
     if (!eng || !eng.runBT) return;
@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v7.5';
+  var V5_VERSION = 'v7.7';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -4096,7 +4096,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ══════════════════════════════════════════════════════════
-     v7.5 核心重設計
+     v7.7 核心重設計
      預測面板：完全獨立 div，插入 React card 之前
      React 永遠不知道我們的 div 存在，不會干擾
   ══════════════════════════════════════════════════════════ */
@@ -4190,14 +4190,14 @@ const summaryHitStats = useMemo(() => {
     var draws = [];
     try { var br=window.__lottoSummaryBridge; draws=(br&&(br.draws||br.history))||[]; } catch(e){}
     if (!eng||!eng.fns||!eng.runBT||draws.length<10) {
-      console.log('[v7.5] not ready, draws='+draws.length);
+      console.log('[v7.7] not ready, draws='+draws.length);
       return;
     }
 
     /* 計算加權共識 */
     var res = v7_computeTopTwo(eng, draws.slice(1));
-    if (!res) { console.log('[v7.5] compute null'); return; }
-    console.log('[v7.5] top2:', res.top2.map(function(x){return x.n;}));
+    if (!res) { console.log('[v7.7] compute null'); return; }
+    console.log('[v7.7] top2:', res.top2.map(function(x){return x.n;}));
 
     /* 儲存本次預測（只在首次，不覆蓋舊預測） */
     try{
@@ -5863,6 +5863,421 @@ var _mo2=new MutationObserver(function(muts){
   _timer=setTimeout(v8_init,350);
 });
 _mo2.observe(document.body||document.documentElement,{childList:true,subtree:true});
+
+/* ══════════════════════════════════════════════════════════════
+   追加功能 A: 動態策略加權
+   追加功能 B: 免費/付費號碼差異化
+   Wrapper pattern — 完全不動原有程式碼
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── A-1. 計算每個策略近N期命中率 → 動態權重 ── */
+function v8_dynWeights(eng,draws,winSize){
+  var n=winSize||20;
+  var sids=Object.keys(eng.fns||{});
+  var weights={};
+  sids.forEach(function(sid){
+    var hits=0,total=0;
+    for(var i=0;i<Math.min(n,draws.length-5);i++){
+      try{
+        var hist=draws.slice(i+1);
+        if(hist.length<5) break;
+        var p=eng.fns[sid](hist,0)||[];
+        var actual=(draws[i].nums||draws[i].draw||[]);
+        var hit=p.slice(0,2).filter(function(pn){return actual.indexOf(pn)>=0;}).length;
+        if(hit>0) hits++;
+        total++;
+      }catch(ex){}
+    }
+    weights[sid]=total>0?(hits/total):0.1;
+  });
+  return weights;
+}
+
+/* ── A-2. 用動態權重算出 Top 5 ── */
+function v8_computeDyn(eng,draws){
+  var sids=Object.keys(eng.fns||{});
+  var weights=v8_dynWeights(eng,draws,20);
+  var scores={};
+  sids.forEach(function(sid){
+    var w=Math.max(weights[sid]||0,0.05);
+    try{
+      var pred=eng.fns[sid](draws.slice(1),0)||[];
+      pred.forEach(function(n,rank){
+        if(!scores[n]) scores[n]={s:0};
+        scores[n].s+=w*Math.exp(-rank*0.3);
+      });
+    }catch(ex){}
+  });
+  return Object.keys(scores)
+    .map(function(n){return{n:parseInt(n),s:scores[n].s};})
+    .sort(function(a,b){return b.s-a.s;})
+    .slice(0,5);
+}
+
+/* ── A-3. 注入動態加權 UI 到 __v8 ── */
+function v8_dynInject(){
+  var panel=document.getElementById('__v8');
+  if(!panel||document.getElementById('__v8dyn')) return;
+  var eng=window.__lottoEngine;
+  if(!eng||!eng.fns) return;
+  var draws=[];
+  try{draws=window.__lottoSummaryBridge.draws||[];}catch(ex){}
+  if(draws.length<10) return;
+
+  var dynPred=v8_computeDyn(eng,draws);
+  if(!dynPred||dynPred.length<2) return;
+  var weights=v8_dynWeights(eng,draws,20);
+  var maxW=Object.keys(weights).reduce(function(m,k){return Math.max(m,weights[k]);},0.001);
+
+  /* 對比原始預測 */
+  var origN1=0,origN2=0;
+  try{
+    var origR=v8_compute(eng,draws,V8_PRED_SIDS);
+    if(origR&&origR.top2){origN1=origR.top2[0]&&origR.top2[0].n;origN2=origR.top2[1]&&origR.top2[1].n;}
+  }catch(ex){}
+  var changed=(dynPred[0].n!==origN1||dynPred[1].n!==origN2);
+
+  function fn(n){return String(n).padStart(2,'0');}
+
+  /* 策略表現 bar（前5名）*/
+  var topW=Object.keys(weights).map(function(s){return{sid:s,w:weights[s]};})
+    .sort(function(a,b){return b.w-a.w;}).slice(0,5);
+  var barsH=topW.map(function(item){
+    var bw=maxW>0?Math.round(item.w/maxW*100):0;
+    var clr=item.w>=0.4?'#5ae0b0':item.w>=0.2?'#f9d44e':'#666';
+    return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">'
+      +'<div style="font:600 8px monospace;color:#555;min-width:30px;">'+item.sid+'</div>'
+      +'<div style="flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.06);">'
+      +'<div style="height:100%;width:'+bw+'%;background:'+clr+';border-radius:2px;"></div></div>'
+      +'<div style="font:700 8px monospace;color:'+clr+';min-width:24px;text-align:right;">'+Math.round(item.w*100)+'%</div>'
+      +'</div>';
+  }).join('');
+
+  var card=document.createElement('div');
+  card.id='__v8dyn';
+  card.style.cssText='margin:0 16px 14px;padding:14px 14px 12px;border-radius:14px;background:linear-gradient(135deg,rgba(90,224,176,.06),rgba(90,224,176,.01));border:1px solid rgba(90,224,176,.2);';
+  card.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+    +'<div><div style="font:700 11px monospace;color:#5ae0b0;letter-spacing:.08em;">🧠 動態加權精選</div>'
+    +'<div style="font:9px monospace;color:#444;margin-top:2px;">近20期各策略勝率重新加權</div></div>'
+    +(changed
+      ?'<span style="font:700 9px monospace;color:#f9d44e;background:rgba(249,212,78,.12);padding:2px 8px;border-radius:4px;">⚡ 與基礎預測不同</span>'
+      :'<span style="font:700 9px monospace;color:#5ae0b0;background:rgba(90,224,176,.1);padding:2px 8px;border-radius:4px;">✓ 雙重確認</span>')
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:14px;">'
+    /* 首選球 */
+    +'<div style="text-align:center;">'
+    +'<div style="font:600 9px monospace;color:#f9d44e;margin-bottom:5px;">🥇 首選</div>'
+    +'<div style="width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a);display:flex;align-items:center;justify-content:center;font:900 20px monospace;color:#2e1900;box-shadow:0 4px 16px rgba(249,212,78,.4);">'+fn(dynPred[0].n)+'</div>'
+    +'</div>'
+    /* 次選球 */
+    +'<div style="text-align:center;">'
+    +'<div style="font:600 9px monospace;color:#80bcf0;margin-bottom:5px;">🥈 次選</div>'
+    +'<div style="width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0);display:flex;align-items:center;justify-content:center;font:900 20px monospace;color:#001428;box-shadow:0 4px 16px rgba(128,188,240,.4);">'+fn(dynPred[1].n)+'</div>'
+    +'</div>'
+    /* 策略勝率 bars */
+    +'<div style="flex:1;min-width:0;padding-left:4px;">'
+    +'<div style="font:700 8px monospace;color:#444;margin-bottom:5px;letter-spacing:.04em;">策略近期勝率 TOP5</div>'
+    +barsH
+    +'</div>'
+    +'</div>';
+
+  /* 插入到第一個 tab 面板之前 */
+  var target=panel.querySelector('#__v8t_strat')||panel.querySelector('[id^="__v8t_"]')||null;
+  if(target&&target.parentNode) target.parentNode.insertBefore(card,target);
+  else panel.appendChild(card);
+}
+
+/* ── B. 免費預覽（8月後 v8_showSubGate 改為此版本）── */
+function v8_showFreePreview(){
+  if(document.getElementById('__v8free')) return;
+  var eng=window.__lottoEngine;
+  var draws=[];
+  try{draws=window.__lottoSummaryBridge.draws||[];}catch(ex){}
+  var n1=null;
+  if(eng&&eng.fns&&draws.length>=10){
+    try{var dp=v8_computeDyn(eng,draws);if(dp&&dp[0]) n1=dp[0].n;}catch(ex){}
+  }
+  function fn(n){return n!=null?String(n).padStart(2,'0'):'??';}
+
+  var gate=document.createElement('div');
+  gate.id='__v8free';
+  gate.style.cssText='position:relative;z-index:100;margin:0;font-family:monospace;';
+  gate.innerHTML=
+    '<div style="background:linear-gradient(180deg,#0d1117,#0a0c10);border-top:1px solid rgba(90,224,176,.15);padding:28px 16px 40px;">'
+    +'<div style="text-align:center;margin-bottom:22px;">'
+    +'<div style="font-size:30px;margin-bottom:8px;">🎯</div>'
+    +'<div style="font:900 18px monospace;color:#f9d44e;margin-bottom:4px;">今彩539 AI 每期精選</div>'
+    +'<div style="font:10px monospace;color:#555;">首選號碼每期免費公開 · 次選號碼訂閱解鎖</div>'
+    +'</div>'
+    /* 兩顆球 */
+    +'<div style="display:flex;gap:24px;justify-content:center;margin-bottom:24px;">'
+    /* 球1 免費 */
+    +'<div style="text-align:center;">'
+    +'<div style="font:700 11px monospace;color:#f9d44e;margin-bottom:8px;">🥇 首選號碼（免費）</div>'
+    +'<div style="width:90px;height:90px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 45%,#c8940a);display:flex;align-items:center;justify-content:center;font:900 34px monospace;color:#2e1900;box-shadow:0 8px 28px rgba(248,200,0,.5);">'+fn(n1)+'</div>'
+    +'<div style="font:9px monospace;color:#555;margin-top:6px;">AI動態加權精選</div>'
+    +'</div>'
+    /* 球2 鎖住 */
+    +'<div style="text-align:center;">'
+    +'<div style="font:700 11px monospace;color:#444;margin-bottom:8px;">🥈 次選號碼（訂閱）</div>'
+    +'<div style="position:relative;width:90px;height:90px;">'
+    +'<div style="width:90px;height:90px;border-radius:50%;background:radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 45%,#2166b0);display:flex;align-items:center;justify-content:center;font:900 34px monospace;color:#001428;filter:blur(8px);">38</div>'
+    +'<div style="position:absolute;inset:0;border-radius:50%;background:rgba(13,17,23,.72);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;">'
+    +'<div style="font-size:20px;">🔒</div>'
+    +'<div style="font:700 9px monospace;color:#888;">訂閱解鎖</div>'
+    +'</div></div>'
+    +'<div style="font:9px monospace;color:#444;margin-top:6px;">+命中率分析</div>'
+    +'</div>'
+    +'</div>'
+    /* 訂閱輸入 */
+    +'<div style="max-width:340px;margin:0 auto;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 16px;">'
+    +'<div style="font:700 11px monospace;color:#999;margin-bottom:12px;text-align:center;">🔓 輸入本月訂閱代碼解鎖完整功能</div>'
+    +'<input id="__v8free_in" placeholder="6位數訂閱代碼" maxlength="10" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:12px 14px;font:700 16px monospace;color:#fff;letter-spacing:.12em;text-align:center;outline:none;">'
+    +'<div id="__v8free_err" style="font:10px monospace;color:#e05a5a;margin-top:6px;min-height:14px;text-align:center;"></div>'
+    +'<button id="__v8free_btn" style="margin-top:10px;width:100%;padding:12px;background:linear-gradient(135deg,#f9d44e,#e6a006);border:none;border-radius:9px;font:800 13px monospace;color:#1a0e00;cursor:pointer;">🔓 解鎖次選號碼 + 完整分析</button>'
+    +'<div style="margin-top:12px;text-align:center;font:10px monospace;color:#444;">'
+    +'還沒有代碼？<span style="color:#f9d44e;cursor:pointer;" onclick="window.open(\'https://line.me/ti/p/~jackkok1888\',\'_blank\')">💬 LINE 聯繫購買 $199/月</span>'
+    +'</div>'
+    +'</div>'
+    +'</div>';
+
+  document.body.appendChild(gate);
+  var inp=document.getElementById('__v8free_in');
+  var btn=document.getElementById('__v8free_btn');
+  var err=document.getElementById('__v8free_err');
+  function doV(){
+    var code=(inp.value||'').trim();
+    if(!code){err.textContent='請輸入代碼';return;}
+    if(v8_activateSub(code)){
+      gate.remove();
+      v8_build();
+    }else{
+      err.textContent='代碼錯誤，請確認後重試';
+      inp.style.borderColor='rgba(224,90,90,.5)';
+      setTimeout(function(){inp.style.borderColor='rgba(255,255,255,.1)';},1500);
+    }
+  }
+  btn.addEventListener('click',doV);
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter')doV();});
+  setTimeout(function(){inp.focus();},100);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   追加功能 C: 5碼 & 8碼擴充預測頁面
+   ══════════════════════════════════════════════════════════════ */
+
+/* C-1. 用全策略集成算出 Top-N 號碼 */
+function v8_topNPred(eng,hist,n){
+  var scores={};
+  Object.keys(eng.fns||{}).forEach(function(sid){
+    try{
+      var pred=eng.fns[sid](hist,0)||[];
+      pred.forEach(function(pn,rank){
+        if(!scores[pn]) scores[pn]=0;
+        scores[pn]+=Math.exp(-rank*0.25);
+      });
+    }catch(ex){}
+  });
+  return Object.keys(scores)
+    .map(function(k){return{n:parseInt(k),s:scores[k]};})
+    .sort(function(a,b){return b.s-a.s;})
+    .slice(0,n)
+    .map(function(x){return x.n;});
+}
+
+/* C-2. 擴充預測主頁面 */
+function v8_showExtPage(){
+  var ex=document.getElementById('__v8ext');
+  if(ex){ex.style.animation='v8out .3s ease both';setTimeout(function(){if(ex.parentNode)ex.parentNode.removeChild(ex);},280);return;}
+  var eng=window.__lottoEngine;
+  var draws=[];
+  try{draws=window.__lottoSummaryBridge.draws||[];}catch(ex2){}
+  if(!eng||!eng.fns||draws.length<15) return;
+
+  var page=document.createElement('div');
+  page.id='__v8ext';
+  page.style.cssText='position:fixed;inset:0;z-index:9999;background:#0d1117;overflow-y:auto;font-family:monospace;animation:v8slide .3s ease both;';
+  page.innerHTML=
+    '<div style="position:sticky;top:0;z-index:10;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.07);padding:14px 16px;display:flex;align-items:center;gap:12px;">'
+    +'<button id="__v8ext_back" style="background:rgba(255,255,255,.07);border:none;border-radius:8px;padding:8px 14px;color:#e6edf3;font:600 13px monospace;cursor:pointer;">← 返回</button>'
+    +'<div style="flex:1;"><div style="font:700 15px monospace;color:#f9d44e;">擴充預測模式</div>'
+    +'<div style="font:10px monospace;color:#555;margin-top:1px;">5碼 · 8碼 · 近30期命中比對</div></div>'
+    +'</div>'
+    +'<div style="padding:16px;" id="__v8ext_body">'
+    +'<div style="text-align:center;padding:50px;color:#444;font:13px monospace;">⏳ AI 計算中，請稍候...</div>'
+    +'</div>';
+
+  document.body.appendChild(page);
+
+  page.querySelector('#__v8ext_back').addEventListener('click',function(){
+    page.style.animation='v8out .3s ease both';
+    setTimeout(function(){if(page.parentNode)page.parentNode.removeChild(page);},280);
+  });
+  var tx=null;
+  page.addEventListener('touchstart',function(e){tx=e.touches[0].clientX;},{passive:true});
+  page.addEventListener('touchend',function(e){
+    if(tx!==null&&e.changedTouches[0].clientX-tx>60){
+      page.style.animation='v8out .3s ease both';
+      setTimeout(function(){if(page.parentNode)page.parentNode.removeChild(page);},280);
+    }tx=null;
+  },{passive:true});
+
+  /* 計算（延遲執行避免阻塞動畫）*/
+  setTimeout(function(){
+    try{
+      function fn(n){return String(n).padStart(2,'0');}
+      var maxRows=Math.min(30,draws.length-12);
+
+      /* 當期預測 */
+      var cur5=v8_topNPred(eng,draws.slice(1),5);
+      var cur8=v8_topNPred(eng,draws.slice(1),8);
+
+      /* 歷史命中 */
+      var rows5=[],rows8=[];
+      for(var i=0;i<maxRows;i++){
+        var h=draws.slice(i+1);
+        if(h.length<10) break;
+        var d=draws[i];
+        var ds=(d.year||'')+'.'+String(d.month||'').padStart(2,'0')+'.'+String(d.day||'').padStart(2,'0');
+        var actual=(d.nums||d.draw||[]).slice();
+        var p5=v8_topNPred(eng,h,5);
+        var h5=p5.filter(function(pn){return actual.indexOf(pn)>=0;}).length;
+        rows5.push({ds:ds,pred:p5,actual:actual,hits:h5});
+        var p8=v8_topNPred(eng,h,8);
+        var h8=p8.filter(function(pn){return actual.indexOf(pn)>=0;}).length;
+        rows8.push({ds:ds,pred:p8,actual:actual,hits:h8});
+      }
+
+      /* 統計 */
+      function avg(rows){return rows.length?(rows.reduce(function(s,r){return s+r.hits;},0)/rows.length).toFixed(2):'—';}
+      function pct(rows,minHits){return rows.length?Math.round(rows.filter(function(r){return r.hits>=minHits;}).length/rows.length*100):0;}
+
+      /* 大球區 */
+      var palBg=[
+        'radial-gradient(circle at 38% 30%,#fffac0,#f9d44e 50%,#c8940a)',
+        'radial-gradient(circle at 38% 30%,#d8eeff,#80bcf0 50%,#2166b0)',
+        'radial-gradient(circle at 38% 30%,#d4f5e8,#5ae0b0 50%,#1a8c66)',
+        'radial-gradient(circle at 38% 30%,#ffe8e0,#e09080 50%,#8c2010)',
+        'radial-gradient(circle at 38% 30%,#ece0ff,#9080e0 50%,#2e1a8c)',
+        'radial-gradient(circle at 38% 30%,#fff0d8,#e0a060 50%,#8c5010)',
+        'radial-gradient(circle at 38% 30%,#e0f8ff,#60d0e0 50%,#107890)',
+        'radial-gradient(circle at 38% 30%,#efffdf,#a0e060 50%,#308010)'
+      ];
+      var palTc=['#2e1900','#001428','#001a10','#2e0800','#0a001a','#2e1800','#001828','#0a2000'];
+      function bigBallsH(nums){
+        return nums.map(function(n,i){
+          return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;">'
+            +'<div style="width:42px;height:42px;border-radius:50%;background:'+palBg[i%8]+';display:flex;align-items:center;justify-content:center;font:900 15px monospace;color:'+palTc[i%8]+';box-shadow:0 3px 10px rgba(0,0,0,.5);">'+fn(n)+'</div>'
+            +'<div style="font:700 8px monospace;color:#555;">#'+(i+1)+'</div>'
+            +'</div>';
+        }).join('');
+      }
+
+      /* 歷史行 */
+      function buildRows(rows,pickN){
+        return rows.map(function(r){
+          var hc=r.hits>=4?'#f9d44e':r.hits>=3?'#5ae0b0':r.hits>=2?'#80bcf0':r.hits>=1?'#777':'#333';
+          var badge=r.hits>=4
+            ?'<span style="font:700 9px monospace;color:#f9d44e;background:rgba(249,212,78,.15);padding:2px 6px;border-radius:4px;">🎯 '+r.hits+'/'+pickN+'</span>'
+            :r.hits>=3
+            ?'<span style="font:700 9px monospace;color:#5ae0b0;background:rgba(90,224,176,.1);padding:2px 6px;border-radius:4px;">✓ '+r.hits+'/'+pickN+'</span>'
+            :r.hits>=2
+            ?'<span style="font:700 9px monospace;color:#80bcf0;background:rgba(128,188,240,.1);padding:2px 6px;border-radius:4px;">'+r.hits+'/'+pickN+'</span>'
+            :r.hits>=1
+            ?'<span style="font:9px monospace;color:#666;">'+r.hits+'/'+pickN+'</span>'
+            :'<span style="font:9px monospace;color:#333;">未中</span>';
+          var rowBg=r.hits>=4?'rgba(249,212,78,.04)':r.hits>=3?'rgba(90,224,176,.03)':r.hits>=2?'rgba(128,188,240,.02)':'transparent';
+          var rowBdr=r.hits>=4?'rgba(249,212,78,.2)':r.hits>=3?'rgba(90,224,176,.12)':r.hits>=2?'rgba(128,188,240,.08)':'rgba(255,255,255,.04)';
+          var pBalls=r.pred.map(function(pn){
+            var hit=r.actual.indexOf(pn)>=0;
+            return '<div style="width:22px;height:22px;border-radius:50%;background:'+(hit?'rgba(90,224,176,.25)':'rgba(255,255,255,.08)')+';border:1px solid '+(hit?'rgba(90,224,176,.6)':'rgba(255,255,255,.15)')+';display:flex;align-items:center;justify-content:center;font:700 8px monospace;color:'+(hit?'#5ae0b0':'#bbb')+';">'+fn(pn)+'</div>';
+          }).join('');
+          var aBalls=r.actual.map(function(an){
+            var hit=r.pred.indexOf(an)>=0;
+            return '<div style="width:22px;height:22px;border-radius:50%;background:'+(hit?'rgba(249,212,78,.2)':'rgba(255,255,255,.05)')+';border:1px solid '+(hit?'rgba(249,212,78,.5)':'rgba(255,255,255,.1)')+';display:flex;align-items:center;justify-content:center;font:700 8px monospace;color:'+(hit?'#f9d44e':'#888')+';">'+fn(an)+'</div>';
+          }).join('');
+          return '<div style="padding:7px 10px;margin-bottom:4px;border-radius:8px;border:1px solid '+rowBdr+';background:'+rowBg+';">'
+            +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">'
+            +'<div style="font:700 10px monospace;color:#999;">'+r.ds+'</div>'+badge+'</div>'
+            +'<div style="display:flex;align-items:center;gap:3px;margin-bottom:3px;">'
+            +'<div style="font:600 8px monospace;color:#555;min-width:26px;text-align:right;">預測</div>'
+            +'<div style="display:flex;gap:2px;flex-wrap:wrap;">'+pBalls+'</div></div>'
+            +'<div style="display:flex;align-items:center;gap:3px;">'
+            +'<div style="font:600 8px monospace;color:#555;min-width:26px;text-align:right;">實際</div>'
+            +'<div style="display:flex;gap:2px;">'+aBalls+'</div></div>'
+            +'</div>';
+        }).join('');
+      }
+
+      document.getElementById('__v8ext_body').innerHTML=
+        /* ─ 5碼區 ─ */
+        '<div style="margin-bottom:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+        +'<div><div style="font:700 12px monospace;color:#f9d44e;letter-spacing:.06em;">🎯 5碼預測模式</div>'
+        +'<div style="font:9px monospace;color:#555;margin-top:2px;">≥2碼命中率 '+pct(rows5,2)+'% · 平均命中 '+avg(rows5)+' 碼</div></div>'
+        +'<div style="font:10px monospace;color:#555;">近'+rows5.length+'期</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;padding:12px;background:rgba(249,212,78,.03);border-radius:10px;margin-bottom:12px;">'
+        +bigBallsH(cur5)
+        +'</div>'
+        +buildRows(rows5,5)
+        +'</div>'
+        /* ─ 8碼區 ─ */
+        +'<div style="margin-bottom:32px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+        +'<div><div style="font:700 12px monospace;color:#5ae0b0;letter-spacing:.06em;">🎯 8碼預測模式</div>'
+        +'<div style="font:9px monospace;color:#555;margin-top:2px;">≥3碼命中率 '+pct(rows8,3)+'% · 平均命中 '+avg(rows8)+' 碼</div></div>'
+        +'<div style="font:10px monospace;color:#555;">近'+rows8.length+'期</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;padding:12px;background:rgba(90,224,176,.03);border-radius:10px;margin-bottom:12px;">'
+        +bigBallsH(cur8)
+        +'</div>'
+        +buildRows(rows8,8)
+        +'</div>';
+
+    }catch(e2){
+      var body=document.getElementById('__v8ext_body');
+      if(body) body.innerHTML='<div style="text-align:center;padding:40px;color:#e05a5a;font:12px monospace;">計算失敗：'+e2.message+'</div>';
+    }
+  },150);
+}
+
+/* C-3. 注入「擴充預測」按鈕到主頁 */
+function v8_extBtnInject(){
+  var panel=document.getElementById('__v8');
+  if(!panel||document.getElementById('__v8ext_btn')) return;
+  var btn=document.createElement('div');
+  btn.id='__v8ext_btn';
+  btn.style.cssText='margin:0 16px 14px;';
+  btn.innerHTML=
+    '<button onclick="v8_showExtPage()" style="width:100%;padding:12px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:10px;font:700 12px monospace;color:#aaa;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">'
+    +'<span>📊 擴充預測模式（5碼 / 8碼）+ 命中比對</span>'
+    +'<span style="color:#555;font-size:16px;">›</span>'
+    +'</button>';
+  var dynCard=document.getElementById('__v8dyn');
+  if(dynCard&&dynCard.parentNode){
+    dynCard.parentNode.insertBefore(btn,dynCard.nextSibling);
+  }else{
+    var target=panel.querySelector('#__v8t_strat')||panel.querySelector('[id^="__v8t_"]');
+    if(target&&target.parentNode) target.parentNode.insertBefore(btn,target);
+    else panel.appendChild(btn);
+  }
+}
+
+/* ── Wrapper: 在原始函式執行後掛上額外行為 ── */
+(function(){
+  /* A: v8_build 後注入動態加權 + 擴充預測按鈕 */
+  var _ob=window.v8_build;
+  window.v8_build=function(){
+    _ob.apply(this,arguments);
+    setTimeout(function(){v8_dynInject();v8_extBtnInject();},200);
+  };
+  /* B: 閘門改為先顯示免費首選號碼 */
+  window.v8_showSubGate=function(){
+    v8_showFreePreview();
+  };
+})();
 
 [800,2200,4500,9000,16000].forEach(function(d){setTimeout(v8_init,d);});
 
