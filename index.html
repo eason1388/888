@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v7.9';
+  var V5_VERSION = 'v8.0';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -6267,16 +6267,28 @@ function v8_extBtnInject(){
 
 /* ── Wrapper: 在原始函式執行後掛上額外行為 ── */
 (function(){
-  /* A: v8_build 後注入動態加權 + 擴充預測按鈕 */
+  /* A: wrap v8_build 供後續呼叫（例如訂閱啟用後重建）*/
   var _ob=window.v8_build;
   window.v8_build=function(){
     _ob.apply(this,arguments);
-    setTimeout(function(){v8_dynInject();v8_extBtnInject();},200);
+    setTimeout(function(){v8_dynInject();v8_extBtnInject();},300);
   };
   /* B: 閘門改為先顯示免費首選號碼 */
   window.v8_showSubGate=function(){
     v8_showFreePreview();
   };
+  /* C: 監聽 #__v8 首次出現（v8_build 在 wrapper 定義前就跑了）*/
+  var _done3=false;
+  var _mo3=new MutationObserver(function(){
+    if(_done3||!document.getElementById('__v8')) return;
+    _done3=true;
+    _mo3.disconnect();
+    setTimeout(function(){
+      try{v8_dynInject();}catch(e){}
+      try{v8_extBtnInject();}catch(e){}
+    },300);
+  });
+  _mo3.observe(document.body||document.documentElement,{childList:true,subtree:true});
 })();
 
 [800,2200,4500,9000,16000].forEach(function(d){setTimeout(v8_init,d);});
