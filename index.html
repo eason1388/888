@@ -3825,7 +3825,7 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 4. 重建策略命中率追蹤（v7.7：顯示本期推薦號碼 + 大改造）── */
+  /* ── 4. 重建策略命中率追蹤（v7.8：顯示本期推薦號碼 + 大改造）── */
   function rebuildTracker() {
     var eng = window.__lottoEngine;
     if (!eng || !eng.runBT) return;
@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v7.7';
+  var V5_VERSION = 'v7.8';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -4096,7 +4096,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ══════════════════════════════════════════════════════════
-     v7.7 核心重設計
+     v7.8 核心重設計
      預測面板：完全獨立 div，插入 React card 之前
      React 永遠不知道我們的 div 存在，不會干擾
   ══════════════════════════════════════════════════════════ */
@@ -4190,14 +4190,14 @@ const summaryHitStats = useMemo(() => {
     var draws = [];
     try { var br=window.__lottoSummaryBridge; draws=(br&&(br.draws||br.history))||[]; } catch(e){}
     if (!eng||!eng.fns||!eng.runBT||draws.length<10) {
-      console.log('[v7.7] not ready, draws='+draws.length);
+      console.log('[v7.8] not ready, draws='+draws.length);
       return;
     }
 
     /* 計算加權共識 */
     var res = v7_computeTopTwo(eng, draws.slice(1));
-    if (!res) { console.log('[v7.7] compute null'); return; }
-    console.log('[v7.7] top2:', res.top2.map(function(x){return x.n;}));
+    if (!res) { console.log('[v7.8] compute null'); return; }
+    console.log('[v7.8] top2:', res.top2.map(function(x){return x.n;}));
 
     /* 儲存本次預測（只在首次，不覆蓋舊預測） */
     try{
@@ -5920,9 +5920,8 @@ function v8_dynInject(){
   if(!panel||document.getElementById('__v8dyn')) return;
   var eng=window.__lottoEngine;
   if(!eng||!eng.fns) return;
-  var draws=[];
-  try{draws=window.__lottoSummaryBridge.draws||[];}catch(ex){}
-  if(draws.length<10) return;
+  var draws=getV8Draws();
+  if(!draws||draws.length<10) return;
 
   var dynPred=v8_computeDyn(eng,draws);
   if(!dynPred||dynPred.length<2) return;
@@ -5992,10 +5991,9 @@ function v8_dynInject(){
 function v8_showFreePreview(){
   if(document.getElementById('__v8free')) return;
   var eng=window.__lottoEngine;
-  var draws=[];
-  try{draws=window.__lottoSummaryBridge.draws||[];}catch(ex){}
+  var draws=getV8Draws();
   var n1=null;
-  if(eng&&eng.fns&&draws.length>=10){
+  if(eng&&eng.fns&&draws&&draws.length>=10){
     try{var dp=v8_computeDyn(eng,draws);if(dp&&dp[0]) n1=dp[0].n;}catch(ex){}
   }
   function fn(n){return n!=null?String(n).padStart(2,'0'):'??';}
@@ -6091,9 +6089,8 @@ function v8_showExtPage(){
   var ex=document.getElementById('__v8ext');
   if(ex){ex.style.animation='v8out .3s ease both';setTimeout(function(){if(ex.parentNode)ex.parentNode.removeChild(ex);},280);return;}
   var eng=window.__lottoEngine;
-  var draws=[];
-  try{draws=window.__lottoSummaryBridge.draws||[];}catch(ex2){}
-  if(!eng||!eng.fns||draws.length<15) return;
+  var draws=getV8Draws();
+  if(!eng||!eng.fns||!draws||draws.length<15) return;
 
   var page=document.createElement('div');
   page.id='__v8ext';
