@@ -3825,7 +3825,7 @@ const summaryHitStats = useMemo(() => {
     });
   }
 
-  /* ── 4. 重建策略命中率追蹤（v7.8：顯示本期推薦號碼 + 大改造）── */
+  /* ── 4. 重建策略命中率追蹤（v7.9：顯示本期推薦號碼 + 大改造）── */
   function rebuildTracker() {
     var eng = window.__lottoEngine;
     if (!eng || !eng.runBT) return;
@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v7.8';
+  var V5_VERSION = 'v7.9';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -4096,7 +4096,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ══════════════════════════════════════════════════════════
-     v7.8 核心重設計
+     v7.9 核心重設計
      預測面板：完全獨立 div，插入 React card 之前
      React 永遠不知道我們的 div 存在，不會干擾
   ══════════════════════════════════════════════════════════ */
@@ -4190,14 +4190,14 @@ const summaryHitStats = useMemo(() => {
     var draws = [];
     try { var br=window.__lottoSummaryBridge; draws=(br&&(br.draws||br.history))||[]; } catch(e){}
     if (!eng||!eng.fns||!eng.runBT||draws.length<10) {
-      console.log('[v7.8] not ready, draws='+draws.length);
+      console.log('[v7.9] not ready, draws='+draws.length);
       return;
     }
 
     /* 計算加權共識 */
     var res = v7_computeTopTwo(eng, draws.slice(1));
-    if (!res) { console.log('[v7.8] compute null'); return; }
-    console.log('[v7.8] top2:', res.top2.map(function(x){return x.n;}));
+    if (!res) { console.log('[v7.9] compute null'); return; }
+    console.log('[v7.9] top2:', res.top2.map(function(x){return x.n;}));
 
     /* 儲存本次預測（只在首次，不覆蓋舊預測） */
     try{
@@ -5981,10 +5981,16 @@ function v8_dynInject(){
     +'</div>'
     +'</div>';
 
-  /* 插入到第一個 tab 面板之前 */
-  var target=panel.querySelector('#__v8t_strat')||panel.querySelector('[id^="__v8t_"]')||null;
-  if(target&&target.parentNode) target.parentNode.insertBefore(card,target);
-  else panel.appendChild(card);
+  /* 插入到 stats bar 之後（不捲動就能看見）*/
+  var firstStat=panel.querySelector('.v8statbox');
+  var statsBar=firstStat&&firstStat.parentNode;
+  if(statsBar&&statsBar.nextSibling){
+    statsBar.parentNode.insertBefore(card,statsBar.nextSibling);
+  }else if(statsBar){
+    statsBar.parentNode.appendChild(card);
+  }else{
+    panel.appendChild(card);
+  }
 }
 
 /* ── B. 免費預覽（8月後 v8_showSubGate 改為此版本）── */
@@ -6240,26 +6246,23 @@ function v8_showExtPage(){
   },150);
 }
 
-/* C-3. 注入「擴充預測」按鈕到主頁 */
+/* C-3. 注入「擴充預測」浮動按鈕（右下角固定，永遠可見）*/
 function v8_extBtnInject(){
-  var panel=document.getElementById('__v8');
-  if(!panel||document.getElementById('__v8ext_btn')) return;
-  var btn=document.createElement('div');
-  btn.id='__v8ext_btn';
-  btn.style.cssText='margin:0 16px 14px;';
-  btn.innerHTML=
-    '<button onclick="v8_showExtPage()" style="width:100%;padding:12px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:10px;font:700 12px monospace;color:#aaa;cursor:pointer;display:flex;align-items:center;justify-content:space-between;">'
-    +'<span>📊 擴充預測模式（5碼 / 8碼）+ 命中比對</span>'
-    +'<span style="color:#555;font-size:16px;">›</span>'
-    +'</button>';
-  var dynCard=document.getElementById('__v8dyn');
-  if(dynCard&&dynCard.parentNode){
-    dynCard.parentNode.insertBefore(btn,dynCard.nextSibling);
-  }else{
-    var target=panel.querySelector('#__v8t_strat')||panel.querySelector('[id^="__v8t_"]');
-    if(target&&target.parentNode) target.parentNode.insertBefore(btn,target);
-    else panel.appendChild(btn);
-  }
+  if(document.getElementById('__v8ext_btn')) return;
+  var fab=document.createElement('div');
+  fab.id='__v8ext_btn';
+  fab.style.cssText='position:fixed;bottom:76px;right:14px;z-index:9000;';
+  fab.innerHTML=
+    '<button onclick="v8_showExtPage()" style="'
+    +'background:linear-gradient(135deg,#1a2a1a,#0d1a10);'
+    +'border:1px solid rgba(90,224,176,.35);'
+    +'border-radius:12px;padding:10px 14px;'
+    +'font:700 12px monospace;color:#5ae0b0;'
+    +'cursor:pointer;white-space:nowrap;'
+    +'box-shadow:0 4px 20px rgba(0,0,0,.5),0 0 12px rgba(90,224,176,.15);'
+    +'display:flex;align-items:center;gap:6px;'
+    +'">📊 5碼 / 8碼 預測</button>';
+  document.body.appendChild(fab);
 }
 
 /* ── Wrapper: 在原始函式執行後掛上額外行為 ── */
