@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v8.3';
+  var V5_VERSION = 'v8.5';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -5103,19 +5103,26 @@ function v8_detail(sid,eng,draws){
     allBalls+='<div style="aspect-ratio:1;border-radius:50%;background:'+bg2+';display:flex;align-items:center;justify-content:center;font:700 12px monospace;color:'+tc2+';">'+fmt(j)+'</div>';
   }
 
-  /* ── 近30期 per-strategy 預測 vs 實際 ── */
+  /* ── 近30期 per-strategy 預測 vs 實際（快取固定，不再重算）── */
   var dpHitRowsH='';
   var dpH1=0,dpH2=0,dpN=Math.min(30,draws.length-6);
   if(eng.fns&&eng.fns[sid]){
     for(var di=0;di<dpN;di++){
       try{
-        var dHist=draws.slice(di+1);
-        if(dHist.length<5) break;
-        var dPredArr=eng.fns[sid](dHist,0)||[];
-        var dTop2=[dPredArr[0],dPredArr[1]].filter(function(x){return x!=null;});
-        var dDraw=draws[di];
-        var dDs='';
-        try{dDs=(dDraw.year||'')+'.'+ String(dDraw.month||'').padStart(2,'0')+'.'+ String(dDraw.day||'').padStart(2,'0');}catch(ex){}
+        var dDraw0=draws[di];
+        var dDs0='';
+        try{dDs0=(dDraw0.year||'')+'.'+String(dDraw0.month||'').padStart(2,'0')+'.'+String(dDraw0.day||'').padStart(2,'0');}catch(ex0){}
+        /* 讀快取 */
+        var dTop2=v8_hcGet(sid,dDs0);
+        if(!dTop2||dTop2.length<1){
+          var dHist=draws.slice(di+1);
+          if(dHist.length<5) break;
+          var dPredArr=eng.fns[sid](dHist,0)||[];
+          dTop2=[dPredArr[0],dPredArr[1]].filter(function(x){return x!=null;});
+          v8_hcSet(sid,dDs0,dTop2); /* 存入快取 */
+        }
+        var dDraw=dDraw0;
+        var dDs=dDs0;
         var dActual=(dDraw.nums||dDraw.draw||[]).slice();
         var dHits=dTop2.filter(function(pn){return dActual.indexOf(pn)>=0;}).length;
         if(dHits===2) dpH2++; else if(dHits===1) dpH1++;
@@ -6071,18 +6078,53 @@ function v8_showFreePreview(){
    追加功能 C: 5碼 & 8碼擴充預測頁面
    ══════════════════════════════════════════════════════════════ */
 
-/* C-1. 用全策略集成算出 Top-N 號碼 */
+/* ── 歷史比對快取（固定化，第一次算完就存起來，之後不再重算）── */
+var V8_HC_VER='2'; /* 升版號可清除全部舊快取 */
+function v8_hcGet(type,dk){
+  try{
+    var v=localStorage.getItem('v8hc_'+V8_HC_VER+'_'+type+'_'+dk);
+    return v?JSON.parse(v):null;
+  }catch(e){return null;}
+}
+function v8_hcSet(type,dk,nums){
+  try{
+    localStorage.setItem('v8hc_'+V8_HC_VER+'_'+type+'_'+dk,JSON.stringify(nums));
+  }catch(e){}
+}
+
+/* C-1. 獨立5碼/8碼預測：策略集成 + 近期頻率層（與2碼模式完全不同）*/
 function v8_topNPred(eng,hist,n){
   var scores={};
+  /* 層1：全策略集成，n越大曲線越平坦，給更多號碼得分機會 */
+  var decay=Math.max(0.06, 0.28-n*0.022);
   Object.keys(eng.fns||{}).forEach(function(sid){
     try{
       var pred=eng.fns[sid](hist,0)||[];
       pred.forEach(function(pn,rank){
+        if(typeof pn!=='number'||pn<1||pn>39) return;
         if(!scores[pn]) scores[pn]=0;
-        scores[pn]+=Math.exp(-rank*0.25);
+        scores[pn]+=Math.exp(-rank*decay);
       });
     }catch(ex){}
   });
+  /* 層2（n>2）：近20期號碼出現頻率 — 補充策略沒有涵蓋到的熱號 */
+  if(n>2){
+    var freq={};
+    hist.slice(0,Math.min(20,hist.length)).forEach(function(draw,i){
+      var w=Math.exp(-i*0.08);
+      (draw.nums||draw.draw||[]).forEach(function(pn){
+        if(!freq[pn]) freq[pn]=0;
+        freq[pn]+=w;
+      });
+    });
+    var maxF=Object.keys(freq).reduce(function(m,k){return Math.max(m,freq[k]);},0.001);
+    /* 層2權重隨n增大：n=5 加0.25倍，n=8 加0.5倍 */
+    var freqW=(n-2)/8;
+    Object.keys(freq).forEach(function(pn){
+      if(!scores[pn]) scores[pn]=0;
+      scores[pn]+=(freq[pn]/maxF)*freqW;
+    });
+  }
   return Object.keys(scores)
     .map(function(k){return{n:parseInt(k),s:scores[k]};})
     .sort(function(a,b){return b.s-a.s;})
@@ -6136,7 +6178,7 @@ function v8_showExtPage(){
       var cur5=v8_topNPred(eng,draws.slice(1),5);
       var cur8=v8_topNPred(eng,draws.slice(1),8);
 
-      /* 歷史命中 */
+      /* 歷史命中（使用快取，第一次算完後固定，不再隨資料變動）*/
       var rows5=[],rows8=[];
       for(var i=0;i<maxRows;i++){
         var h=draws.slice(i+1);
@@ -6144,10 +6186,14 @@ function v8_showExtPage(){
         var d=draws[i];
         var ds=(d.year||'')+'.'+String(d.month||'').padStart(2,'0')+'.'+String(d.day||'').padStart(2,'0');
         var actual=(d.nums||d.draw||[]).slice();
-        var p5=v8_topNPred(eng,h,5);
+        /* 5碼：讀快取；無快取才計算並存入 */
+        var p5=v8_hcGet('5c',ds);
+        if(!p5||p5.length<5){p5=v8_topNPred(eng,h,5);v8_hcSet('5c',ds,p5);}
         var h5=p5.filter(function(pn){return actual.indexOf(pn)>=0;}).length;
         rows5.push({ds:ds,pred:p5,actual:actual,hits:h5});
-        var p8=v8_topNPred(eng,h,8);
+        /* 8碼：讀快取；無快取才計算並存入 */
+        var p8=v8_hcGet('8c',ds);
+        if(!p8||p8.length<8){p8=v8_topNPred(eng,h,8);v8_hcSet('8c',ds,p8);}
         var h8=p8.filter(function(pn){return actual.indexOf(pn)>=0;}).length;
         rows8.push({ds:ds,pred:p8,actual:actual,hits:h8});
       }
@@ -6213,28 +6259,63 @@ function v8_showExtPage(){
         }).join('');
       }
 
+      /* 取得下期日期標籤 */
+      var nd=draws[0];
+      var ndStr=nd?(nd.year||'')+'.'+String(nd.month||'').padStart(2,'0')+'.'+String(nd.day||'').padStart(2,'0'):'';
+
+      /* 大球（用於頂部推薦區） */
+      function bigBallLg(n,i){
+        return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">'
+          +'<div style="width:52px;height:52px;border-radius:50%;background:'+palBg[i%8]+';display:flex;align-items:center;justify-content:center;font:900 18px monospace;color:'+palTc[i%8]+';box-shadow:0 4px 14px rgba(0,0,0,.6);">'+fn(n)+'</div>'
+          +'<div style="font:700 8px monospace;color:#666;">第'+(i+1)+'碼</div>'
+          +'</div>';
+      }
+
       document.getElementById('__v8ext_body').innerHTML=
-        /* ─ 5碼區 ─ */
-        '<div style="margin-bottom:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;">'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
-        +'<div><div style="font:700 12px monospace;color:#f9d44e;letter-spacing:.06em;">🎯 5碼預測模式</div>'
-        +'<div style="font:9px monospace;color:#555;margin-top:2px;">≥2碼命中率 '+pct(rows5,2)+'% · 平均命中 '+avg(rows5)+' 碼</div></div>'
-        +'<div style="font:10px monospace;color:#555;">近'+rows5.length+'期</div>'
+        /* ══ 本期推薦大卡 ══ */
+        '<div style="background:linear-gradient(135deg,rgba(249,212,78,.06),rgba(90,224,176,.04));border:1px solid rgba(249,212,78,.18);border-radius:16px;padding:18px 16px 20px;margin-bottom:14px;">'
+        +'<div style="text-align:center;margin-bottom:14px;">'
+        +'<div style="font:800 13px monospace;color:#f9d44e;letter-spacing:.08em;">📌 本期推薦購買號碼</div>'
+        +'<div style="font:9px monospace;color:#555;margin-top:3px;">全策略AI集成 + 頻率加權 · 獨立於2碼模式計算</div>'
         +'</div>'
-        +'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;padding:12px;background:rgba(249,212,78,.03);border-radius:10px;margin-bottom:12px;">'
-        +bigBallsH(cur5)
+        /* 5碼推薦 */
+        +'<div style="margin-bottom:14px;">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+        +'<div style="font:700 11px monospace;color:#f9d44e;">🎯 5碼精選</div>'
+        +'<div style="flex:1;height:1px;background:rgba(249,212,78,.15);"></div>'
+        +'<div style="font:9px monospace;color:#666;">歷史≥1碼命中率 '+pct(rows5,1)+'%</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">'
+        +cur5.map(bigBallLg).join('')
+        +'</div>'
+        +'</div>'
+        /* 8碼推薦 */
+        +'<div>'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+        +'<div style="font:700 11px monospace;color:#5ae0b0;">🎯 8碼廣選</div>'
+        +'<div style="flex:1;height:1px;background:rgba(90,224,176,.15);"></div>'
+        +'<div style="font:9px monospace;color:#666;">歷史≥2碼命中率 '+pct(rows8,2)+'%</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">'
+        +cur8.map(bigBallLg).join('')
+        +'</div>'
+        +'</div>'
+        +'</div>'
+        /* ══ 歷史比對 — 5碼 ══ */
+        +'<div style="margin-bottom:14px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px;">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
+        +'<div style="font:700 11px monospace;color:#f9d44e;">📊 5碼歷史命中比對</div>'
+        +'<div style="flex:1;height:1px;background:rgba(255,255,255,.05);"></div>'
+        +'<div style="font:9px monospace;color:#555;">近'+rows5.length+'期 · 平均中 '+avg(rows5)+' 碼</div>'
         +'</div>'
         +buildRows(rows5,5)
         +'</div>'
-        /* ─ 8碼區 ─ */
-        +'<div style="margin-bottom:32px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;">'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
-        +'<div><div style="font:700 12px monospace;color:#5ae0b0;letter-spacing:.06em;">🎯 8碼預測模式</div>'
-        +'<div style="font:9px monospace;color:#555;margin-top:2px;">≥3碼命中率 '+pct(rows8,3)+'% · 平均命中 '+avg(rows8)+' 碼</div></div>'
-        +'<div style="font:10px monospace;color:#555;">近'+rows8.length+'期</div>'
-        +'</div>'
-        +'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;padding:12px;background:rgba(90,224,176,.03);border-radius:10px;margin-bottom:12px;">'
-        +bigBallsH(cur8)
+        /* ══ 歷史比對 — 8碼 ══ */
+        +'<div style="margin-bottom:32px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px;">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
+        +'<div style="font:700 11px monospace;color:#5ae0b0;">📊 8碼歷史命中比對</div>'
+        +'<div style="flex:1;height:1px;background:rgba(255,255,255,.05);"></div>'
+        +'<div style="font:9px monospace;color:#555;">近'+rows8.length+'期 · 平均中 '+avg(rows8)+' 碼</div>'
         +'</div>'
         +buildRows(rows8,8)
         +'</div>';
