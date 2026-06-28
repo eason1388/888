@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v8.1';
+  var V5_VERSION = 'v8.2';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -6265,39 +6265,27 @@ function v8_extBtnInject(){
   document.body.appendChild(fab);
 }
 
-/* ── Wrapper: 在原始函式執行後掛上額外行為 ── */
+/* ── 追加功能注入 ── */
 (function(){
-  /* A: wrap v8_build 供後續呼叫（例如訂閱啟用後重建）*/
-  var _ob=window.v8_build;
-  window.v8_build=function(){
-    _ob.apply(this,arguments);
-    setTimeout(function(){v8_dynInject();v8_extBtnInject();},300);
-  };
   /* B: 閘門改為先顯示免費首選號碼 */
   window.v8_showSubGate=function(){
     v8_showFreePreview();
   };
-  /* C: 監聽 #__v8 首次出現（v8_build 在 wrapper 定義前就跑了）*/
-  var _done3=false;
-  var _mo3=new MutationObserver(function(){
-    if(_done3||!document.getElementById('__v8')) return;
-    _done3=true;
-    _mo3.disconnect();
-    setTimeout(function(){
-      try{v8_dynInject();}catch(e){}
-      try{v8_extBtnInject();}catch(e){}
-    },300);
-  });
-  _mo3.observe(document.body||document.documentElement,{childList:true,subtree:true});
-  /* 若 #__v8 在 IIFE 執行前就已建立（v8_build 同步跑完），立即注入 */
-  if(!_done3&&document.getElementById('__v8')){
-    _done3=true;
-    _mo3.disconnect();
-    setTimeout(function(){
-      try{v8_dynInject();}catch(e){}
-      try{v8_extBtnInject();}catch(e){}
-    },50);
+  /* C: 超可靠注入 — 多重時間點 + 1秒輪詢，完全不靠 MutationObserver */
+  function _tryInject(){
+    try{v8_dynInject();}catch(e){}
+    try{v8_extBtnInject();}catch(e){}
   }
+  /* 固定時間點：100 / 500 / 1000 / 2000 / 3000 / 5000 / 8000 ms */
+  [100,500,1000,2000,3000,5000,8000].forEach(function(d){
+    setTimeout(_tryInject,d);
+  });
+  /* 每秒輪詢，最多 20 次 */
+  var _cnt=0;
+  var _intv=setInterval(function(){
+    _tryInject();
+    if(++_cnt>=20) clearInterval(_intv);
+  },1000);
 })();
 
 [800,2200,4500,9000,16000].forEach(function(d){setTimeout(v8_init,d);});
