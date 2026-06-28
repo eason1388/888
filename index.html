@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v8.0';
+  var V5_VERSION = 'v8.1';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -6289,6 +6289,15 @@ function v8_extBtnInject(){
     },300);
   });
   _mo3.observe(document.body||document.documentElement,{childList:true,subtree:true});
+  /* 若 #__v8 在 IIFE 執行前就已建立（v8_build 同步跑完），立即注入 */
+  if(!_done3&&document.getElementById('__v8')){
+    _done3=true;
+    _mo3.disconnect();
+    setTimeout(function(){
+      try{v8_dynInject();}catch(e){}
+      try{v8_extBtnInject();}catch(e){}
+    },50);
+  }
 })();
 
 [800,2200,4500,9000,16000].forEach(function(d){setTimeout(v8_init,d);});
