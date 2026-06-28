@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v8.2';
+  var V5_VERSION = 'v8.3';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -6266,26 +6266,33 @@ function v8_extBtnInject(){
 }
 
 /* ── 追加功能注入 ── */
+/* 把 v8_showExtPage 掛到 window，讓 onclick 屬性可以呼叫 */
+window.v8_showExtPage=v8_showExtPage;
 (function(){
   /* B: 閘門改為先顯示免費首選號碼 */
   window.v8_showSubGate=function(){
     v8_showFreePreview();
   };
-  /* C: 超可靠注入 — 多重時間點 + 1秒輪詢，完全不靠 MutationObserver */
+  /* C: 超可靠注入 — 多重時間點 + 輪詢（兩個元素都存在後立即停止）*/
+  var _intv=null;
   function _tryInject(){
     try{v8_dynInject();}catch(e){}
     try{v8_extBtnInject();}catch(e){}
+    /* 兩個元素都已存在 → 停止所有輪詢 */
+    if(document.getElementById('__v8dyn')&&document.getElementById('__v8ext_btn')){
+      if(_intv) clearInterval(_intv);
+    }
   }
-  /* 固定時間點：100 / 500 / 1000 / 2000 / 3000 / 5000 / 8000 ms */
-  [100,500,1000,2000,3000,5000,8000].forEach(function(d){
+  /* 固定時間點：300 / 800 / 1500 / 3000 / 6000 ms */
+  [300,800,1500,3000,6000].forEach(function(d){
     setTimeout(_tryInject,d);
   });
-  /* 每秒輪詢，最多 20 次 */
+  /* 每 500ms 輪詢，最多 30 次（15 秒）*/
   var _cnt=0;
-  var _intv=setInterval(function(){
+  _intv=setInterval(function(){
     _tryInject();
-    if(++_cnt>=20) clearInterval(_intv);
-  },1000);
+    if(++_cnt>=30) clearInterval(_intv);
+  },500);
 })();
 
 [800,2200,4500,9000,16000].forEach(function(d){setTimeout(v8_init,d);});
