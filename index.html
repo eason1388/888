@@ -3991,7 +3991,7 @@ const summaryHitStats = useMemo(() => {
   }
 
   /* ── 版本徽章（右上角）── */
-  var V5_VERSION = 'v8.5';
+  var V5_VERSION = 'v8.6';
   /* ══════════════════════════════════════════════════════════
      v7.0 完整重設計
      ────────────────────────────────────────────────────────
@@ -6327,6 +6327,29 @@ function v8_showExtPage(){
   },150);
 }
 
+/* C-2b. 策略列依命中率（中1碼）由高到低重排 */
+function v8_sortStratRows(){
+  var container=document.getElementById('__v8t_strat');
+  if(!container) return;
+  var rows=Array.prototype.slice.call(container.querySelectorAll('.v8row[data-sid]'));
+  if(rows.length<2) return;
+  var eng=window.__lottoEngine;
+  if(!eng||!eng.runBT) return;
+  /* 取各策略的「中1碼率」作為排序依據 */
+  var cache={};
+  function h1p(sid){
+    if(cache[sid]!==undefined) return cache[sid];
+    try{
+      var bt=eng.runBT(sid);
+      cache[sid]=(bt&&bt.st&&bt.st.t)?((bt.st.h1+bt.st.h2)/bt.st.t):0;
+    }catch(e){cache[sid]=0;}
+    return cache[sid];
+  }
+  rows.sort(function(a,b){return h1p(b.getAttribute('data-sid'))-h1p(a.getAttribute('data-sid'));});
+  /* 移到容器末尾（統計條 stats-div 保持在頂部不動）*/
+  rows.forEach(function(row){container.appendChild(row);});
+}
+
 /* C-3. 注入「擴充預測」浮動按鈕（右下角固定，永遠可見）*/
 function v8_extBtnInject(){
   if(document.getElementById('__v8ext_btn')) return;
@@ -6359,7 +6382,8 @@ window.v8_showExtPage=v8_showExtPage;
   function _tryInject(){
     try{v8_dynInject();}catch(e){}
     try{v8_extBtnInject();}catch(e){}
-    /* 兩個元素都已存在 → 停止所有輪詢 */
+    try{v8_sortStratRows();}catch(e){}
+    /* 兩個元素都已存在 → 停止輪詢（sortStratRows 保持繼續以應付分頁切換）*/
     if(document.getElementById('__v8dyn')&&document.getElementById('__v8ext_btn')){
       if(_intv) clearInterval(_intv);
     }
