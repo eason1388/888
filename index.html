@@ -6457,43 +6457,60 @@ window.v8_showExtPage=v8_showExtPage;
 </script>
 
 <script>
-/* ═══ LINE 聯絡重導向 v1.0 (additive only)
-   將「解鎖完整5碼」CTA 黃色列 和「5碼/8碼預測」綠色按鈕
-   點擊後改為開啟 LINE 聯絡，取代原本的解鎖/預測頁面。
+/* ═══ 訂閱閘門 v2.0 (additive only)
+   點擊「解鎖完整5碼」或「5碼/8碼預測」按鈕時，
+   彈出密碼輸入框：
+   ✅ 輸入正確密碼 → 解鎖原有功能
+   💬 無密碼者 → 點擊聯絡 LINE 訂閱
    ═══════════════════════════════════════════════════════════ */
 (function(){
   var LINE_URL='https://line.me/ti/p/johnkok1588';
+  var PASSWORD='103200';
+  var _origUnlock=null, _origExt=null;
 
-  function openLine(e){
-    if(e){e.preventDefault();e.stopImmediatePropagation();}
-    window.open(LINE_URL,'_blank');
+  function showGate(onSuccess){
+    var old=document.getElementById('__gate_modal');
+    if(old) old.parentNode.removeChild(old);
+    var overlay=document.createElement('div');
+    overlay.id='__gate_modal';
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML=
+      '<div style="background:#141b26;border:1px solid rgba(212,175,55,.35);border-radius:20px;padding:28px 22px;max-width:310px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.7);">'+
+        '<div style="font:800 18px monospace;color:#f9d44e;margin-bottom:6px;">🔐 解鎖完整預測</div>'+
+        '<div style="font:11px monospace;color:#777;margin-bottom:20px;">輸入訂閱密碼，或聯絡 LINE 取得密碼</div>'+
+        '<input id="__gate_pw" type="password" placeholder="輸入密碼" autocomplete="off"'+
+          ' style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:13px 14px;font:700 18px monospace;color:#fff;outline:none;margin-bottom:10px;text-align:center;letter-spacing:.15em;"/>'+
+        '<button id="__gate_ok" style="width:100%;background:linear-gradient(135deg,#c8940a,#f9d44e);border:none;border-radius:10px;padding:13px;font:700 14px monospace;color:#1a0e00;cursor:pointer;margin-bottom:16px;">✅ 確認解鎖</button>'+
+        '<div style="font:11px monospace;color:#555;margin-bottom:10px;">— 還沒有密碼？ —</div>'+
+        '<a href="'+LINE_URL+'" target="_blank" style="display:block;background:linear-gradient(135deg,#06c755,#04a846);border-radius:10px;padding:13px;font:700 14px monospace;color:#fff;text-decoration:none;margin-bottom:14px;">💬 聯絡 LINE 取得密碼</a>'+
+        '<div id="__gate_err" style="color:#ff6b6b;font:11px monospace;margin-bottom:8px;display:none;">密碼錯誤，請重試</div>'+
+        '<button id="__gate_close" style="background:none;border:none;color:#444;font:11px monospace;cursor:pointer;padding:4px 12px;">關閉</button>'+
+      '</div>';
+    document.body.appendChild(overlay);
+    setTimeout(function(){ var pw=document.getElementById('__gate_pw'); if(pw) pw.focus(); },100);
+    document.getElementById('__gate_ok').onclick=function(){
+      var pw=document.getElementById('__gate_pw').value.trim();
+      if(pw===PASSWORD){ document.body.removeChild(overlay); if(typeof onSuccess==='function') onSuccess(); }
+      else{ var err=document.getElementById('__gate_err'); if(err) err.style.display='block'; var inp=document.getElementById('__gate_pw'); if(inp){inp.value='';inp.focus();} }
+    };
+    document.getElementById('__gate_pw').onkeydown=function(e){ if(e.key==='Enter') document.getElementById('__gate_ok').click(); };
+    document.getElementById('__gate_close').onclick=function(){ document.body.removeChild(overlay); };
+    overlay.onclick=function(e){ if(e.target===overlay) document.body.removeChild(overlay); };
   }
 
-  window.v8_showUnlock  = function(){ window.open(LINE_URL,'_blank'); };
-  window.v8_showExtPage = function(){ window.open(LINE_URL,'_blank'); };
+  function installOverrides(){
+    if(!_origUnlock && typeof window.v8_showUnlock==='function') _origUnlock=window.v8_showUnlock;
+    if(!_origExt && typeof window.v8_showExtPage==='function') _origExt=window.v8_showExtPage;
+    window.v8_showUnlock =function(){ showGate(function(){ if(_origUnlock) _origUnlock(); }); };
+    window.v8_showExtPage=function(){ showGate(function(){ if(_origExt) _origExt(); }); };
+  }
 
   function patchButtons(){
-    var cta=document.getElementById('__v8cta_btn');
-    if(cta&&!cta.getAttribute('data-line')){
-      var c1=cta.cloneNode(true);
-      c1.setAttribute('data-line','1');
-      c1.addEventListener('click',openLine);
-      cta.parentNode.replaceChild(c1,cta);
-    }
-    var ul=document.getElementById('__v8unlock');
-    if(ul&&!ul.getAttribute('data-line')){
-      var c2=ul.cloneNode(true);
-      c2.setAttribute('data-line','1');
-      c2.addEventListener('click',openLine);
-      ul.parentNode.replaceChild(c2,ul);
-    }
-    var ext=document.getElementById('__v8ext_btn');
-    if(ext&&!ext.getAttribute('data-line')){
-      var c3=ext.cloneNode(true);
-      c3.setAttribute('data-line','1');
-      c3.addEventListener('click',openLine);
-      ext.parentNode.replaceChild(c3,ext);
-    }
+    installOverrides();
+    function wrap(el,cb){ if(!el||el.getAttribute('data-gate')) return; var c=el.cloneNode(true); c.setAttribute('data-gate','1'); c.addEventListener('click',function(e){ e.preventDefault(); e.stopImmediatePropagation(); cb(); }); el.parentNode.replaceChild(c,el); }
+    wrap(document.getElementById('__v8cta_btn'),function(){ showGate(function(){ if(_origUnlock) _origUnlock(); }); });
+    wrap(document.getElementById('__v8unlock'), function(){ showGate(function(){ if(_origUnlock) _origUnlock(); }); });
+    wrap(document.getElementById('__v8ext_btn'),function(){ showGate(function(){ if(_origExt) _origExt(); }); });
   }
 
   [600,1500,3000,6000,10000].forEach(function(d){ setTimeout(patchButtons,d); });
