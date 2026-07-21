@@ -8,22 +8,15 @@ const dataPath = path.join(repoRoot, 'data', 'd539-latest.json');
 const predsPath = path.join(repoRoot, 'data', 'd539-preds.json');
 const source = 'https://lottery.timetable.tw/jin-cai-539?limit=50&sortOrder=DESC';
 
-/* ─ 預測邏輯（熱號策略）─
-   使用開獎前已知的歷史資料，統計近 30 期最高頻率號碼作為預測。
-   此函式只用 priorRows（該期之前的資料），確保不含未來資訊。
-   一旦存入 d539-preds.json，永不覆蓋，保持歷史預測不變。        */
+/* ─ 預測邏輯（熱號策略）─ 只用 priorRows（該期之前的資料），確保不含未來資訊 */
 function predictTop2(priorRows) {
   const window = priorRows.slice(-30);
-  if (window.length < 5) return [];
+  if (!window.length) return [1, 2];
   const freq = {};
   for (let i = 1; i <= 39; i++) freq[i] = 0;
-  for (const row of window) {
-    for (const n of row.slice(3, 8)) freq[n] = (freq[n] || 0) + 1;
-  }
-  // 補充：近 10 期加倍權重（越近越重要）
-  const recent10 = window.slice(-10);
-  for (const row of recent10) {
-    for (const n of row.slice(3, 8)) freq[n] = (freq[n] || 0) + 1;
+  for (const row of window) for (const n of row.slice(3, 8)) freq[n] = (freq[n] || 0) + 1;
+  if (window.length >= 10) {
+    for (const row of window.slice(-10)) for (const n of row.slice(3, 8)) freq[n] = (freq[n] || 0) + 1;
   }
   return Array.from({ length: 39 }, (_, i) => i + 1)
     .sort((a, b) => (freq[b] || 0) - (freq[a] || 0) || a - b)
@@ -43,9 +36,7 @@ function nextDrawDate(year, month, day) {
 
 function normalizePeriod(period) {
   const digits = String(period ?? '').replace(/\D/g, '');
-  if (digits.length === 9 && digits.slice(3, 6) === '000') {
-    return `${digits.slice(0, 3)}${digits.slice(6)}`;
-  }
+  if (digits.length === 9 && digits.slice(3, 6) === '000') return `${digits.slice(0, 3)}${digits.slice(6)}`;
   return digits || String(period ?? '');
 }
 
@@ -70,7 +61,6 @@ function parseRowsFromCards(html) {
   return rows;
 }
 
-// 通用解析器：不依賴特定 CSS 類別，直接找「期別：XXX • YYYY/M/D」再抓開獎號碼
 function parseRowsFromGeneric(html) {
   const rows = [];
   const periodPattern = /期別：\s*(\d+)\s*[•·]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/g;
@@ -80,7 +70,6 @@ function parseRowsFromGeneric(html) {
     const [, period, year, month, day] = match;
     const blockEnd = matches[i + 1]?.index ?? Math.min(match.index + 2000, html.length);
     const block = html.slice(match.index, blockEnd);
-    // 找「開獎號碼」之後的數字段落
     const numSection = block.match(/開獎號碼([\s\S]{0,400})/);
     if (!numSection) continue;
     const nums = [];
@@ -109,80 +98,63 @@ function uniqueSortedRows(rows) {
 }
 
 async function main() {
-  const response = await fetch(source, {
-    headers: {
-      'user-agent': 'Mozilla/5.0 (compatible; 888-auto-update/1.0)'
-    }
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch source: HTTP ${response.status}`);
-  }
+  const response = await fetch(source, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; 888-auto-update/1.0)' } });
+  if (!response.ok) throw new Error(`Failed to fetch source: HTTP ${response.status}`);
 
   const html = await response.text();
-  const scrapedRows = uniqueSortedRows([
-    ...parseRowsFromItemList(html),
-    ...parseRowsFromCards(html),
-    ...parseRowsFromGeneric(html)
-  ]);
-
-  if (!scrapedRows.length) {
-    throw new Error('No draw rows parsed from source page');
-  }
+  const scrapedRows = uniqueSortedRows([...parseRowsFromItemList(html), ...parseRowsFromCards(html), ...parseRowsFromGeneric(html)]);
+  if (!scrapedRows.length) throw new Error('No draw rows parsed from source page');
 
   let existing = { rows: [] };
-  try {
-    existing = JSON.parse(await fs.readFile(dataPath, 'utf8'));
-  } catch {}
-
+  try { existing = JSON.parse(await fs.readFile(dataPath, 'utf8')); } catch {}
   const oldRows = existing.rows || [];
   const rows = uniqueSortedRows([...oldRows, ...scrapedRows]);
 
-  /* ── 預測凍結：為每一個新增的開獎日存入「開獎前的預測」──────────
-     原理：當 Actions 在 D 期開獎後執行，它把 D 期結果加入 rows。
-     同時，我們用「D 期之前的所有資料」計算「對 D 期的預測」並凍結。
-     未來即使演算法更新，這份凍結紀錄也不會被覆蓋。
-     ──────────────────────────────────────────────────────────── */
+  /* ── 預測凍結 ─────────────────────────────────────────────────────────
+     原則：
+     1. 每個開獎日的「預測」永遠用「該日之前的所有資料」計算，不含當日。
+     2. 一旦寫入 preds，永不覆蓋（歷史預測不可篡改）。
+     3. 每次執行時掃描全部開獎日，自動補齊缺漏（防止 preds 與 latest 脫鉤）。
+     ────────────────────────────────────────────────────────────────── */
   let preds = {};
   try { preds = JSON.parse(await fs.readFile(predsPath, 'utf8')); } catch {}
 
-  const existingPeriods = new Set(oldRows.map(r => r[8]));
-  const newRows = rows.filter(r => !existingPeriods.has(r[8]));
+  let predsChanged = false;
 
-  for (const newRow of newRows) {
-    const [year, month, day] = newRow;
+  // ── 補漏掃描：確保每一個已知開獎日都有預測 ──
+  for (let i = 0; i < rows.length; i++) {
+    const [year, month, day] = rows[i];
     const dateKey = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    // 用該期「之前」的資料計算預測（walk-forward，不含該期本身）
-    const priorRows = rows.filter(r => {
-      const rd = new Date(r[0], r[1]-1, r[2]);
-      const td = new Date(year, month-1, day);
-      return rd < td;
-    });
-    if (!preds[dateKey] && priorRows.length >= 10) {
+    if (!preds[dateKey]) {
+      const priorRows = rows.slice(0, i); // strictly before this draw
       preds[dateKey] = predictTop2(priorRows);
-      console.log(`  凍結預測 ${dateKey}: [${preds[dateKey]}]（由 ${priorRows.length} 期歷史計算）`);
+      predsChanged = true;
+      console.log(`  補漏 ${dateKey}: [${preds[dateKey]}]（由 ${priorRows.length} 期計算）`);
     }
-    // 同時為下一個開獎日存入預測（讓下期看到的預測在開獎前就已凍結）
-    const nextKey = nextDrawDate(year, month, day);
+  }
+
+  // ── 為下一個開獎日預存預測 ──
+  if (rows.length > 0) {
+    const last = rows[rows.length - 1];
+    const nextKey = nextDrawDate(last[0], last[1], last[2]);
     if (!preds[nextKey]) {
-      preds[nextKey] = predictTop2(rows);
+      preds[nextKey] = predictTop2(rows); // 用所有已知資料預測下一期
+      predsChanged = true;
       console.log(`  預存下期 ${nextKey}: [${preds[nextKey]}]`);
     }
   }
 
-  const payload = {
-    source,
-    updatedAt: new Date().toISOString(),
-    rows
-  };
+  // Sort preds by date
+  const sortedPreds = Object.fromEntries(Object.entries(preds).sort(([a],[b])=>a.localeCompare(b)));
 
+  const payload = { source, updatedAt: new Date().toISOString(), rows };
   await fs.mkdir(path.dirname(dataPath), { recursive: true });
   await fs.writeFile(dataPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-  await fs.writeFile(predsPath, `${JSON.stringify(preds, null, 2)}\n`, 'utf8');
+  if (predsChanged) {
+    await fs.writeFile(predsPath, `${JSON.stringify(sortedPreds, null, 2)}\n`, 'utf8');
+    console.log(`Predictions updated: ${Object.keys(sortedPreds).length} dates in ${predsPath}`);
+  }
   console.log(`Updated ${dataPath} with ${rows.length} rows; latest period ${rows.at(-1)?.[8] || 'n/a'}`);
-  console.log(`Predictions file: ${Object.keys(preds).length} dates frozen in ${predsPath}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main().catch((error) => { console.error(error); process.exit(1); });
