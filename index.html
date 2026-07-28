@@ -6530,7 +6530,9 @@ window.v8_showExtPage=v8_showExtPage;
   </script>
 
 <script>
-/* 伺服器端永久預測檔案同步 v2.0 - 伺服器為準，永不更動歷史紀錄 */
+/* 伺服器端永久預測檔案同步 v3.0
+   修正：立即執行（不等1秒），完成後呼叫 v8_init() 強制重新渲染
+   確保任何裝置、私密瀏覽都顯示與伺服器一致的凍結預測號碼 */
 (function(){
   function syncServerPreds(){
     var url='./data/d539-preds.json?v='+Date.now();
@@ -6541,20 +6543,25 @@ window.v8_showExtPage=v8_showExtPage;
         var local={};
         try{ local=JSON.parse(localStorage.getItem('lotto_pred_log')||'{}'); }catch(e){}
         var changed=false;
-        // 伺服器 preds.json 為唯一正確來源，永遠覆蓋本地值以確保一致性
+        // 伺服器 preds.json 為唯一正確來源，永遠覆蓋本地值
         Object.keys(serverPreds).forEach(function(dk){
           var p=serverPreds[dk];
           if(Array.isArray(p)&&p.length>=2){
-            var localStr=JSON.stringify(local[dk]);
-            var serverStr=JSON.stringify(p);
-            if(localStr!==serverStr){ local[dk]=p; changed=true; }
+            if(JSON.stringify(local[dk])!==JSON.stringify(p)){ local[dk]=p; changed=true; }
           }
         });
         if(changed){
           try{ localStorage.setItem('lotto_pred_log',JSON.stringify(local)); }catch(e){}
+          // 強制 app 重新讀取 localStorage 並重新渲染預測
+          setTimeout(function(){
+            if(typeof v8_init==='function') v8_init();
+          }, 200);
         }
       }).catch(function(){});
   }
+  // 立即執行：搶在 app 第一次渲染（800ms）之前完成同步
+  syncServerPreds();
+  // 備用：1秒後再執行一次確保
   setTimeout(syncServerPreds, 1000);
 })();
 </script>
