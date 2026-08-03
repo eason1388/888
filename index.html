@@ -6494,9 +6494,7 @@ window.v8_showExtPage=v8_showExtPage;
         if(changed){
           try{ localStorage.setItem('lotto_pred_log',JSON.stringify(local)); }catch(e){}
           // 強制 app 重新讀取 localStorage 並重新渲染預測
-          setTimeout(function(){
-            if(typeof v8_init==='function') v8_init();
-          }, 200);
+
         }
       }).catch(function(){});
   }
@@ -6513,11 +6511,13 @@ window.v8_showExtPage=v8_showExtPage;
   function bypassGate(){
     var g=document.getElementById('__v8gate');
     var r=document.getElementById('root');
+    var ph=document.getElementById('__v8ph');
     if(g) g.style.cssText='display:none!important';
     if(r&&getComputedStyle(r).display==='none') r.style.cssText='display:block!important';
+    if(ph&&getComputedStyle(ph).display!=='none') ph.style.cssText='display:none!important';
   }
   bypassGate();
-  [100,300,500,1000,2000].forEach(function(t){setTimeout(bypassGate,t);});
+  [100,300,500,1000,2000,4000].forEach(function(t){setTimeout(bypassGate,t);});
   var obs=new MutationObserver(bypassGate);
   if(document.body) obs.observe(document.body,{subtree:true,attributes:true,attributeFilter:['style']});
   window.addEventListener('load',bypassGate);
