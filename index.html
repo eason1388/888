@@ -6506,5 +6506,22 @@ window.v8_showExtPage=v8_showExtPage;
   setTimeout(syncServerPreds, 1000);
 })();
 </script>
+<script>
+/* 訂閱閘門永久關閉 v1.0
+   隱藏 __v8gate，顯示 root，持續監控防止復原 */
+(function(){
+  function bypassGate(){
+    var g=document.getElementById('__v8gate');
+    var r=document.getElementById('root');
+    if(g) g.style.cssText='display:none!important';
+    if(r&&getComputedStyle(r).display==='none') r.style.cssText='display:block!important';
+  }
+  bypassGate();
+  [100,300,500,1000,2000].forEach(function(t){setTimeout(bypassGate,t);});
+  var obs=new MutationObserver(bypassGate);
+  if(document.body) obs.observe(document.body,{subtree:true,attributes:true,attributeFilter:['style']});
+  window.addEventListener('load',bypassGate);
+})();
+</script>
 </body>
 </html>
