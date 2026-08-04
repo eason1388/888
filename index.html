@@ -1,9 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-<script>/* ═══ gate bypass v7.0 ═══ */
+<script>/* ═══ gate bypass v8.0 ═══ */
 (function(){
-  var V='13';
+  var _raf=window.requestAnimationFrame.bind(window);
+  var _caf=window.cancelAnimationFrame.bind(window);
+  var _si=window.setInterval.bind(window);
+  var _cli=window.clearInterval.bind(window);
+  var _sto=window.setTimeout.bind(window);
+  var V='14';
   var u=new URLSearchParams(location.search);
   if(u.get('cv')!==V){location.replace(location.pathname+'?cv='+V+'&t='+Date.now());return;}
   var CSS='#__v8gate,#__v8gate *{display:none!important;pointer-events:none!important}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important}#root{display:flex!important}';
@@ -18,16 +23,17 @@
     if(r&&window.getComputedStyle(r).display==='none')r.style.setProperty('display','flex','important');
   }
   ensureBypassLast();
-  // rAF loop - immune to clearInterval
+  var _sids=new Set(),_rids=new Set();
+  var _ocli=window.clearInterval;
+  window.clearInterval=function(id){if(_sids.has(id))return;(_ocli||_cli).call(window,id);};
+  var _ocaf=window.cancelAnimationFrame;
+  window.cancelAnimationFrame=function(id){if(_rids.has(id))return;(_ocaf||_caf).call(window,id);};
+  var _i=_si(ensureBypassLast,200),_j=_si(fixRoot,400);
+  _sids.add(_i);_sids.add(_j);
+  _sto(function(){window.clearInterval=_ocli;window.cancelAnimationFrame=_ocaf;_cli(_i);_cli(_j);},30000);
   var _s=Date.now(),_b=0,_f=0;
-  function loop(ts){
-    if(Date.now()-_s<30000){
-      if(ts-_b>200){ensureBypassLast();_b=ts;}
-      if(ts-_f>500){fixRoot();_f=ts;}
-      requestAnimationFrame(loop);
-    }
-  }
-  requestAnimationFrame(loop);
+  function loop(ts){if(Date.now()-_s<30000){if(ts-_b>200){ensureBypassLast();_b=ts;}if(ts-_f>400){fixRoot();_f=ts;}_rids.add(_raf(loop));}}
+  _rids.add(_raf(loop));
   document.addEventListener('DOMContentLoaded',function(){
     ensureBypassLast();fixRoot();
     var r=document.getElementById('root');
