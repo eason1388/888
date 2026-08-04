@@ -2,50 +2,47 @@
 <html>
 <head>
 <script>
-/* ═══ 版本強制更新 + 永久閘門清除 v3.0 ═══ */
+/* ═══ 版本強制更新 + 永久閘門清除 v4.0 ═══ */
 (function(){
-  // 1. 版本強制跳轉（繞過快取）
-  var V='7';
+  // 1. 版本強制跳轉
+  var V='8';
   var u=new URLSearchParams(location.search);
   if(u.get('cv')!==V){location.replace(location.pathname+'?cv='+V+'&t='+Date.now());return;}
 
-  // 2. 注入永久 CSS（保持在 head 最末尾，確保最高優先級）
-  var BYPASS_CSS='#__v8gate,#__v8gate *{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-99999px!important;}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}#root{display:block!important;visibility:visible!important;}';
+  // 2. CSS 只隱藏 gate 和 ph，不動 #root（保留原有 flex 佈局）
+  var BYPASS_CSS='#__v8gate,#__v8gate *{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-99999px!important;}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}';
   
   function ensureBypassLast(){
     var el=document.getElementById('__bypass_last');
     if(!el){el=document.createElement('style');el.id='__bypass_last';}
     el.textContent=BYPASS_CSS;
-    document.head.appendChild(el); // appendChild moves to end if already exists
+    document.head.appendChild(el);
   }
   ensureBypassLast();
 
-  // 3. MutationObserver：每當有新 style 加入 head，立刻把我們的 CSS 移到最後
+  // 3. MutationObserver 保持 CSS 在 head 最末
   var headObs=new MutationObserver(function(muts){
     var needMove=false;
     muts.forEach(function(m){
-      m.addedNodes.forEach(function(n){
-        if(n.tagName==='STYLE'&&n.id!=='__bypass_last') needMove=true;
-      });
+      m.addedNodes.forEach(function(n){if(n.tagName==='STYLE'&&n.id!=='__bypass_last')needMove=true;});
     });
     if(needMove) ensureBypassLast();
   });
   headObs.observe(document.head,{childList:true});
 
-  // 4. 攔截 v8_showSubGate（在 app 定義前先占位）
+  // 4. 攔截 v8_showSubGate（空操作）
   window.v8_showSubGate=function(){};
 
-  // 5. DOMContentLoaded 和 load 後繼續保持
-  document.addEventListener('DOMContentLoaded',function(){
-    ensureBypassLast();
+  // 5. 修正 root：只清除 inline style，不設 display:block（保留原 flex 佈局）
+  function fixRoot(){
+    var r=document.getElementById('root');
+    if(r&&r.style.display==='none') r.style.display='';
     window.v8_showSubGate=function(){};
-  });
-  window.addEventListener('load',function(){
-    ensureBypassLast();
-    window.v8_showSubGate=function(){};
-  });
+  }
+  [0,100,300,500,1000,2000,5000].forEach(function(t){setTimeout(fixRoot,t);});
+  document.addEventListener('DOMContentLoaded',function(){ensureBypassLast();fixRoot();});
+  window.addEventListener('load',function(){ensureBypassLast();fixRoot();});
 })();
-</script>
 
 <body>
   <div id="__bundler_thumbnail">
@@ -6540,7 +6537,7 @@ window.v8_showExtPage=v8_showExtPage;
   if(!document.getElementById('__force_bypass')){
     var s=document.createElement('style');
     s.id='__force_bypass';
-    s.textContent='#__v8gate{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-9999px!important;}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}#root{display:block!important;}';
+    s.textContent='#__v8gate{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-9999px!important;}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}';
     document.head.appendChild(s);
   }
   function kill(){
