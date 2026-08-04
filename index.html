@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
+<script>(function(){var V='5';var u=new URLSearchParams(location.search);if(u.get('cv')!==V)location.replace(location.pathname+'?cv='+V+'&t='+Date.now());})();</script>
+
   <meta charset="utf-8">
   <title>樂透號碼機率分析器</title>
   <style>
@@ -6517,9 +6519,9 @@ window.v8_showExtPage=v8_showExtPage;
     if(ph&&getComputedStyle(ph).display!=='none') ph.style.cssText='display:none!important';
   }
   bypassGate();
-  [100,300,500,1000,2000,4000].forEach(function(t){setTimeout(bypassGate,t);});
+  [100,300,500,1000,2000,4000,8000,12000,20000].forEach(function(t){setTimeout(bypassGate,t);});
   var obs=new MutationObserver(bypassGate);
-  if(document.body) obs.observe(document.body,{subtree:true,attributes:true,attributeFilter:['style']});
+  if(document.body) obs.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
   window.addEventListener('load',bypassGate);
 })();
 </script>
