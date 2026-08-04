@@ -1,30 +1,52 @@
 <!DOCTYPE html>
 <html>
 <head>
-<script>(function(){var V='6';var u=new URLSearchParams(location.search);if(u.get('cv')!==V)location.replace(location.pathname+'?cv='+V+'&t='+Date.now());})();</script>
+<script>
+/* ═══ 版本強制更新 + 永久閘門清除 v3.0 ═══ */
+(function(){
+  // 1. 版本強制跳轉（繞過快取）
+  var V='7';
+  var u=new URLSearchParams(location.search);
+  if(u.get('cv')!==V){location.replace(location.pathname+'?cv='+V+'&t='+Date.now());return;}
 
-  <meta charset="utf-8">
-  <title>樂透號碼機率分析器</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #faf9f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-    #__bundler_loading { position: fixed; bottom: 20px; right: 20px; font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; color: #666; background: #fff; padding: 8px 14px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.12); z-index: 10000; }
-    #__bundler_thumbnail { position: fixed; inset: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #faf9f5; z-index: 9999; }
-    #__bundler_thumbnail svg { width: 100%; height: 100%; object-fit: contain; }
-    #__bundler_placeholder { color: #999; font-size: 14px; }
-  </style>
-  <noscript>
-    <style>#__bundler_loading { display: none; }</style>
-    <div style="position:fixed;bottom:12px;left:12px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#999;background:rgba(255,255,255,0.9);padding:6px 12px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.08);z-index:10000;">
-      This page requires JavaScript to display.
-    </div>
-  </noscript>
-<style id="__force_bypass">
-#__v8gate{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-9999px!important;}
-#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}
-#root{display:block!important;visibility:visible!important;}
-</style>
-</head>
+  // 2. 注入永久 CSS（保持在 head 最末尾，確保最高優先級）
+  var BYPASS_CSS='#__v8gate,#__v8gate *{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-99999px!important;}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}#root{display:block!important;visibility:visible!important;}';
+  
+  function ensureBypassLast(){
+    var el=document.getElementById('__bypass_last');
+    if(!el){el=document.createElement('style');el.id='__bypass_last';}
+    el.textContent=BYPASS_CSS;
+    document.head.appendChild(el); // appendChild moves to end if already exists
+  }
+  ensureBypassLast();
+
+  // 3. MutationObserver：每當有新 style 加入 head，立刻把我們的 CSS 移到最後
+  var headObs=new MutationObserver(function(muts){
+    var needMove=false;
+    muts.forEach(function(m){
+      m.addedNodes.forEach(function(n){
+        if(n.tagName==='STYLE'&&n.id!=='__bypass_last') needMove=true;
+      });
+    });
+    if(needMove) ensureBypassLast();
+  });
+  headObs.observe(document.head,{childList:true});
+
+  // 4. 攔截 v8_showSubGate（在 app 定義前先占位）
+  window.v8_showSubGate=function(){};
+
+  // 5. DOMContentLoaded 和 load 後繼續保持
+  document.addEventListener('DOMContentLoaded',function(){
+    ensureBypassLast();
+    window.v8_showSubGate=function(){};
+  });
+  window.addEventListener('load',function(){
+    ensureBypassLast();
+    window.v8_showSubGate=function(){};
+  });
+})();
+</script>
+
 <body>
   <div id="__bundler_thumbnail">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
