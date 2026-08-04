@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-<script>/* ═══ gate bypass v5.0 ═══ */
+<script>/* ═══ gate bypass v6.0 ═══ */
 (function(){
-  var V='11';
+  var V='12';
   var u=new URLSearchParams(location.search);
   if(u.get('cv')!==V){location.replace(location.pathname+'?cv='+V+'&t='+Date.now());return;}
-  var CSS='#__v8gate,#__v8gate *{display:none!important;pointer-events:none!important}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important}';
+  var CSS='#__v8gate,#__v8gate *{display:none!important;pointer-events:none!important}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important}#root{display:flex!important}';
   function ensureBypassLast(){
     var el=document.getElementById('__bypass_last');
     if(!el){el=document.createElement('style');el.id='__bypass_last';}
@@ -15,7 +15,7 @@
   }
   ensureBypassLast();
   var _i=setInterval(ensureBypassLast,200);
-  setTimeout(function(){clearInterval(_i);},15000);
+  setTimeout(function(){clearInterval(_i);},30000);
   function fixRoot(){
     var r=document.getElementById('root');
     if(r&&window.getComputedStyle(r).display==='none'){
@@ -23,8 +23,8 @@
     }
   }
   [0,100,200,300,500,1000,2000,3000,5000].forEach(function(t){setTimeout(fixRoot,t);});
-  var _j=setInterval(fixRoot,300);
-  setTimeout(function(){clearInterval(_j);},10000);
+  var _j=setInterval(fixRoot,500);
+  setTimeout(function(){clearInterval(_j);},30000);
   document.addEventListener('DOMContentLoaded',function(){
     ensureBypassLast();fixRoot();
     var r=document.getElementById('root');
