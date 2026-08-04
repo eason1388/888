@@ -5,12 +5,12 @@
 /* ═══ 版本強制更新 + 永久閘門清除 v4.0 ═══ */
 (function(){
   // 1. 版本強制跳轉
-  var V='9';
+  var V='10';
   var u=new URLSearchParams(location.search);
   if(u.get('cv')!==V){location.replace(location.pathname+'?cv='+V+'&t='+Date.now());return;}
 
   // 2. CSS 只隱藏 gate 和 ph，不動 #root（保留原有 flex 佈局）
-  var BYPASS_CSS='#__v8gate,#__v8gate *{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-99999px!important;}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}';
+  var BYPASS_CSS='#__v8gate,#__v8gate *{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-99999px!important;}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}#root{display:flex!important}';
   
   function ensureBypassLast(){
     var el=document.getElementById('__bypass_last');
