@@ -5,7 +5,7 @@
 /* ═══ 版本強制更新 + 永久閘門清除 v4.0 ═══ */
 (function(){
   // 1. 版本強制跳轉
-  var V='8';
+  var V='9';
   var u=new URLSearchParams(location.search);
   if(u.get('cv')!==V){location.replace(location.pathname+'?cv='+V+'&t='+Date.now());return;}
 
@@ -31,18 +31,16 @@
   headObs.observe(document.head,{childList:true});
 
   // 4. 攔截 v8_showSubGate（空操作）
-  window.v8_showSubGate=function(){};
-
   // 5. 修正 root：只清除 inline style，不設 display:block（保留原 flex 佈局）
   function fixRoot(){
     var r=document.getElementById('root');
     if(r&&r.style.display==='none') r.style.display='';
-    window.v8_showSubGate=function(){};
   }
   [0,100,300,500,1000,2000,5000].forEach(function(t){setTimeout(fixRoot,t);});
   document.addEventListener('DOMContentLoaded',function(){ensureBypassLast();fixRoot();});
   window.addEventListener('load',function(){ensureBypassLast();fixRoot();});
 })();
+</script></head>
 
 <body>
   <div id="__bundler_thumbnail">
@@ -6547,7 +6545,7 @@ window.v8_showExtPage=v8_showExtPage;
     // 移除 gate 和 ph 元素，讓 app 的 JS 找不到它們
     if(g&&g.parentNode) g.parentNode.removeChild(g);
     if(ph&&ph.parentNode) ph.parentNode.removeChild(ph);
-    if(r) r.style.cssText='display:block!important;visibility:visible!important;';
+    if(r) r.style.removeProperty('display');
   }
   kill();
   [50,100,200,500,800,1000,1500,2000,3000,5000,8000,15000,25000].forEach(function(t){setTimeout(kill,t);});
