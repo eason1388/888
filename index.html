@@ -1,43 +1,35 @@
 <!DOCTYPE html>
 <html>
 <head>
-<script>
-/* ═══ 版本強制更新 + 永久閘門清除 v4.0 ═══ */
+<script>/* ═══ gate bypass v5.0 ═══ */
 (function(){
-  // 1. 版本強制跳轉
-  var V='10';
+  var V='11';
   var u=new URLSearchParams(location.search);
   if(u.get('cv')!==V){location.replace(location.pathname+'?cv='+V+'&t='+Date.now());return;}
-
-  // 2. CSS 只隱藏 gate 和 ph，不動 #root（保留原有 flex 佈局）
-  var BYPASS_CSS='#__v8gate,#__v8gate *{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;top:-99999px!important;}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important;}#root{display:flex!important}';
-  
+  var CSS='#__v8gate,#__v8gate *{display:none!important;pointer-events:none!important}#__v8ph{display:none!important;visibility:hidden!important;opacity:0!important}';
   function ensureBypassLast(){
     var el=document.getElementById('__bypass_last');
     if(!el){el=document.createElement('style');el.id='__bypass_last';}
-    el.textContent=BYPASS_CSS;
-    document.head.appendChild(el);
+    el.textContent=CSS;
+    if(document.head&&document.head.lastChild!==el)document.head.appendChild(el);
   }
   ensureBypassLast();
-
-  // 3. MutationObserver 保持 CSS 在 head 最末
-  var headObs=new MutationObserver(function(muts){
-    var needMove=false;
-    muts.forEach(function(m){
-      m.addedNodes.forEach(function(n){if(n.tagName==='STYLE'&&n.id!=='__bypass_last')needMove=true;});
-    });
-    if(needMove) ensureBypassLast();
-  });
-  headObs.observe(document.head,{childList:true});
-
-  // 4. 攔截 v8_showSubGate（空操作）
-  // 5. 修正 root：只清除 inline style，不設 display:block（保留原 flex 佈局）
+  var _i=setInterval(ensureBypassLast,200);
+  setTimeout(function(){clearInterval(_i);},15000);
   function fixRoot(){
     var r=document.getElementById('root');
-    if(r&&r.style.display==='none') r.style.display='';
+    if(r&&window.getComputedStyle(r).display==='none'){
+      r.style.setProperty('display','flex','important');
+    }
   }
-  [0,100,300,500,1000,2000,5000].forEach(function(t){setTimeout(fixRoot,t);});
-  document.addEventListener('DOMContentLoaded',function(){ensureBypassLast();fixRoot();});
+  [0,100,200,300,500,1000,2000,3000,5000].forEach(function(t){setTimeout(fixRoot,t);});
+  var _j=setInterval(fixRoot,300);
+  setTimeout(function(){clearInterval(_j);},10000);
+  document.addEventListener('DOMContentLoaded',function(){
+    ensureBypassLast();fixRoot();
+    var r=document.getElementById('root');
+    if(r)new MutationObserver(function(){fixRoot();}).observe(r,{attributes:true,attributeFilter:['style','class']});
+  });
   window.addEventListener('load',function(){ensureBypassLast();fixRoot();});
 })();
 </script></head>
