@@ -4709,12 +4709,12 @@ var V8_genCode=(function(){
   };
 })();
 
-/* 檢查本月訂閱是否有效（2026/8/1 前免費開放，之後需代碼）*/
+/* 檢查本月訂閱是否有效（台北時間 2026/10/1 前免費開放，之後需代碼）*/
 function v8_isSub(){
   try{
     var now=new Date();
-    /* 2026年8月1日前完全免費 */
-    if(now<new Date(2026,7,1)) return true;
+    /* Free until 2026-10-01 00:00 Asia/Taipei. */
+    if(now.getTime()<Date.UTC(2026,8,30,16,0,0)) return true;
     var cy=now.getFullYear(),cm=now.getMonth()+1;
     var d=JSON.parse(localStorage.getItem('v8_sub')||'null');
     if(!d||d.y!==cy||d.m!==cm) return false;
@@ -6469,6 +6469,11 @@ window.v8_showExtPage=v8_showExtPage;
   var _origUnlock=null, _origExt=null;
 
   function showGate(onSuccess){
+    /* Do not show the subscription lock before 2026-10-01 00:00 Asia/Taipei. */
+    if(Date.now()<Date.UTC(2026,8,30,16,0,0)){
+      if(typeof onSuccess==='function') onSuccess();
+      return;
+    }
     var old=document.getElementById('__gate_modal');
     if(old) old.parentNode.removeChild(old);
     var overlay=document.createElement('div');
