@@ -2,29 +2,37 @@ name: Update d539 data
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/update-d539.yml'
   schedule:
-    - cron: '15 13 * * 1-6'
-    - cron: '0 14 * * 1-6'
-    - cron: '30 15 * * 1-6'
+    # Taipei 21:35, 22:35, 23:35, plus daily 07:35 catch-up.
+    - cron: '35 13,14,15 * * *'
+    - cron: '35 23 * * *'
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: d539-update
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
+      - name: Test data ingestion
+        run: node --test scripts/update-d539-latest.test.mjs
       - name: Update latest d539 JSON
         run: node ./scripts/update-d539-latest.mjs
-
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
@@ -32,4 +40,16 @@ jobs:
           git add data/d539-latest.json data/d539-preds.json
           git diff --cached --quiet && exit 0
           git commit -m "Update latest d539 data"
+          git pull --rebase origin main
           git push
+      # GITHUB_TOKEN pushes do not trigger another Pages workflow.
+      # Deploy explicitly so scheduled data updates reach the public website.
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - id: deployment
+        uses: actions/deploy-pages@v4
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}

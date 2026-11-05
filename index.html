@@ -36,6 +36,7 @@
   </div>
   <div id="__bundler_loading">Unpacking...</div>
 
+  <script src="./scripts/data-health.js"></script>
   <script>
     
 document.addEventListener('DOMContentLoaded', async function() {
@@ -48,28 +49,36 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   async function syncLatest539() {
     try {
-      const res = await fetch(resolveLatest539Url(), { cache: 'no-store' });
+      const res = await fetch(resolveLatest539Url(), { cache: 'no-store', signal: AbortSignal.timeout(15000) });
       if (!res.ok) return;
       const payload = await res.json();
       if (!payload || !Array.isArray(payload.rows)) return;
       const key = 'lotto_user_draws_d539';
-      const existing = JSON.parse(localStorage.getItem(key) || '[]');
-      const seen = new Set(existing.map((u) => `${u.year}-${u.month}-${u.day}`));
+      let existing;
+      try { existing = JSON.parse(localStorage.getItem(key) || '[]'); } catch { existing = []; }
+      if (!Array.isArray(existing)) existing = [];
+      const seen = new Map(existing.map((u, i) => [`${u.year}-${u.month}-${u.day}`, i]));
       let changed = false;
       payload.rows.forEach((row) => {
         if (!Array.isArray(row) || row.length < 9) return;
         const [year, month, day, n1, n2, n3, n4, n5, period] = row;
         const stamp = `${year}-${month}-${day}`;
-        if (seen.has(stamp)) return;
-        seen.add(stamp);
-        existing.push({
+        const index = seen.get(stamp);
+        const record = {
           year,
           month,
           day,
           draw: [n1, n2, n3, n4, n5],
           period: String(period).replace(/\D/g, '').replace(/^(\d{3})000(\d{3})$/, '$1$2'),
           autoSynced: true
-        });
+        };
+        if (index !== undefined) {
+          if (JSON.stringify(existing[index].draw) === JSON.stringify(record.draw) && existing[index].period === record.period) return;
+          existing[index] = record;
+        } else {
+          seen.set(stamp, existing.length);
+          existing.push(record);
+        }
         changed = true;
       });
       if (changed) {

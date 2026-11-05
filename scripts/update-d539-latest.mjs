@@ -40,75 +40,117 @@ function normalizePeriod(period) {
   return digits || String(period ?? '');
 }
 
-function parseRowsFromItemList(html) {
-  const matches = [...html.matchAll(/"name":"[^"]*?第\s*(\d+)\s*期開獎","startDate":"(\d{4})-(\d{2})-(\d{2})","description":"開獎號碼：\s*([\d,\s]+)"/g)];
-  return matches.map(([, period, year, month, day, nums]) => {
-    const values = nums.split(',').map((part) => Number(part.trim())).filter(Number.isFinite);
-    if (values.length !== 5) return null;
-    return [Number(year), Number(month), Number(day), ...values, normalizePeriod(period)];
-  }).filter(Boolean);
+export function validateRow(row) {
+  if (!Array.isArray(row) || row.length !== 9) throw new Error('Invalid draw row');
+  const [y,m,d,...rest] = row;
+  const date = new Date(Date.UTC(y,m-1,d));
+  if (!Number.isInteger(y) || y<2000 || date.getUTCFullYear()!==y || date.getUTCMonth()!==m-1 || date.getUTCDate()!==d) throw new Error('Invalid draw date');
+  const nums=rest.slice(0,5);
+  if (nums.some(n=>!Number.isInteger(n)||n<1||n>39) || new Set(nums).size!==5 || !/^\d{6}$/.test(normalizePeriod(row[8]))) throw new Error('Invalid draw numbers or period');
+  return [y,m,d,...nums.slice().sort((a,b)=>a-b),normalizePeriod(row[8])];
 }
 
-function parseRowsFromCards(html) {
-  const rows = [];
-  const pattern = /draw-card__period">期別：\s*(\d+)\s*•\s*(\d{4})\/(\d{1,2})\/(\d{1,2})<\/p>[\s\S]*?draw-card__numbers">([\s\S]*?)<\/div>\s*<\/div>/g;
-  for (const match of html.matchAll(pattern)) {
-    const [, period, year, month, day, numbersBlock] = match;
-    const values = [...numbersBlock.matchAll(/draw-card__ball">(\d{2})<\/div>/g)].map((item) => Number(item[1]));
-    if (values.length !== 5) continue;
-    rows.push([Number(year), Number(month), Number(day), ...values, normalizePeriod(period)]);
+export function uniqueSortedRows(rows) {
+  const map=new Map();
+  for (const raw of rows) {
+    const row=validateRow(raw);
+    map.set(row[8],row);
   }
-  return rows;
+  return [...map.values()].sort((a,b)=>Date.UTC(a[0],a[1]-1,a[2])-Date.UTC(b[0],b[1]-1,b[2]));
 }
 
-function parseRowsFromGeneric(html) {
-  const rows = [];
-  const periodPattern = /期別：\s*(\d+)\s*[•·]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/g;
-  const matches = [...html.matchAll(periodPattern)];
-  for (let i = 0; i < matches.length; i++) {
-    const match = matches[i];
-    const [, period, year, month, day] = match;
-    const blockEnd = matches[i + 1]?.index ?? Math.min(match.index + 2000, html.length);
-    const block = html.slice(match.index, blockEnd);
-    const numSection = block.match(/開獎號碼([\s\S]{0,400})/);
-    if (!numSection) continue;
-    const nums = [];
-    for (const m of numSection[1].matchAll(/\b(\d{1,2})\b/g)) {
-      const n = Number(m[1]);
-      if (n >= 1 && n <= 39 && !nums.includes(n)) nums.push(n);
-      if (nums.length === 5) break;
-    }
-    if (nums.length !== 5) continue;
-    rows.push([Number(year), Number(month), Number(day), ...nums, normalizePeriod(period)]);
-  }
-  return rows;
-}
-
-function uniqueSortedRows(rows) {
-  const map = new Map();
-  for (const row of rows) {
-    if (!Array.isArray(row) || row.length < 9) continue;
-    map.set(normalizePeriod(row[8]), [...row.slice(0, 8), normalizePeriod(row[8])]);
-  }
-  return [...map.values()].sort((a, b) => {
-    const byDate = new Date(a[0], a[1] - 1, a[2]) - new Date(b[0], b[1] - 1, b[2]);
-    if (byDate !== 0) return byDate;
-    return String(a[8]).localeCompare(String(b[8]));
+export function parseOfficial(payload) {
+  if (payload.rtCode!==0 || !Array.isArray(payload.content?.daily539Res)) throw new Error('Invalid official response');
+  return payload.content.daily539Res.map(item=>{
+    const date=/^(\d{4})-(\d{2})-(\d{2})/.exec(item.lotteryDate||'');
+    if (!date) throw new Error('Invalid official date');
+    return validateRow([...date.slice(1).map(Number),...(item.drawNumberSize||[]),normalizePeriod(item.period)]);
   });
 }
 
+// Read semantic date/period fields within each draw, independent of CSS nesting.
+export function parseHtml(html) {
+  const rows=[];
+  for (const match of html.matchAll(/<(section|a)\b([^>]*data-game-slug=["']jin-cai-539["'][^>]*)>([\s\S]*?)<\/\1>/gi)) {
+    const block=match[2]+' '+match[3];
+    const period=block.match(/(?:期別：|第)\s*(\d{6,9})/);
+    const date=block.match(/(?:datetime=["']|startDate=)(\d{4})-(\d{2})-(\d{2})/);
+    const nums=[...match[3].matchAll(/class=["'][^"']*\bdraw-card__ball\b[^"']*["'][^>]*>\s*(\d{1,2})\s*</g)].map(m=>Number(m[1]));
+    if (period&&date&&nums.length===5) rows.push(validateRow([...date.slice(1).map(Number),...nums,normalizePeriod(period[1])]));
+  }
+  // Older pages expose draw events as JSON-LD; parse JSON instead of property-order regex.
+  for (const match of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    let root; try { root=JSON.parse(match[1]); } catch { continue; }
+    function visit(value) {
+      if (!value||typeof value!=='object') return;
+      const period=String(value.name||'').match(/第\s*(\d+)\s*期開獎/);
+      const date=String(value.startDate||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+      const nums=String(value.description||'').match(/^開獎號碼：\s*([\d,\s]+)$/);
+      if(period&&date&&nums) rows.push(validateRow([...date.slice(1).map(Number),...nums[1].split(',').map(Number),normalizePeriod(period[1])]));
+      Object.values(value).forEach(visit);
+    }
+    visit(root);
+  }
+  if (!rows.length) throw new Error('No valid draws in backup source');
+  return uniqueSortedRows(rows);
+}
+
+export async function fetchText(url, fetcher=fetch) {
+  let last;
+  for(let attempt=0;attempt<3;attempt++) {
+    try {
+      const response=await fetcher(url,{headers:{'user-agent':'Mozilla/5.0 (compatible; 888-auto-update/2.0)'},signal:AbortSignal.timeout(20000)});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.text();
+    } catch(error) { last=error; if(attempt<2) await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1))); }
+  }
+  throw last;
+}
+
+export function expectedDrawDate(now=new Date()) {
+  // Allow publication until 23:00 Taipei; Sunday has no regular draw.
+  const local=new Date(now.getTime()+8*3600000);
+  if(local.getUTCHours()<23) local.setUTCDate(local.getUTCDate()-1);
+  while(local.getUTCDay()===0) local.setUTCDate(local.getUTCDate()-1);
+  return local.toISOString().slice(0,10);
+}
+
+export function dateKey(row) { return `${row[0]}-${String(row[1]).padStart(2,'0')}-${String(row[2]).padStart(2,'0')}`; }
+
+async function loadDraws(oldRows) {
+  const local=new Date(Date.now()+8*3600000);
+  const currentMonth=local.toISOString().slice(0,7);
+  const oldest=oldRows.length ? dateKey(oldRows.at(-1)).slice(0,7) : currentMonth;
+  let official=[];
+  try {
+    // Catch up every missed month, including January/year transitions.
+    for(let cursor=new Date(oldest+'-01T00:00:00Z');cursor.toISOString().slice(0,7)<=currentMonth;cursor.setUTCMonth(cursor.getUTCMonth()+1)) {
+      const month=cursor.toISOString().slice(0,7);
+      const url=`https://api.taiwanlottery.com/TLCAPIWeB/Lottery/Daily539Result?month=${month}&pageNum=1&pageSize=31`;
+      official.push(...parseOfficial(JSON.parse(await fetchText(url))));
+    }
+    if(official.length && dateKey(uniqueSortedRows(official).at(-1))>=expectedDrawDate()) return {rows:official,source:'https://api.taiwanlottery.com/TLCAPIWeB/Lottery/Daily539Result'};
+    throw new Error('Official source has not published the expected draw');
+  } catch(error) { console.warn('Official source unavailable/stale:',error.message); }
+  const backup=parseHtml(await fetchText(source));
+  return {rows:uniqueSortedRows([...backup,...official]),source};
+}
+
 async function main() {
-  const response = await fetch(source, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; 888-auto-update/1.0)' } });
-  if (!response.ok) throw new Error(`Failed to fetch source: HTTP ${response.status}`);
-
-  const html = await response.text();
-  const scrapedRows = uniqueSortedRows([...parseRowsFromItemList(html), ...parseRowsFromCards(html), ...parseRowsFromGeneric(html)]);
-  if (!scrapedRows.length) throw new Error('No draw rows parsed from source page');
-
-  let existing = { rows: [] };
-  try { existing = JSON.parse(await fs.readFile(dataPath, 'utf8')); } catch {}
-  const oldRows = existing.rows || [];
-  const rows = uniqueSortedRows([...oldRows, ...scrapedRows]);
+  const existing=JSON.parse(await fs.readFile(dataPath,'utf8'));
+  const oldRows=uniqueSortedRows(existing.rows||[]);
+  const fetched=await loadDraws(oldRows);
+  const rows=uniqueSortedRows([...oldRows,...fetched.rows]);
+  const latest=dateKey(rows.at(-1));
+  const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+  if(latest>today) throw new Error('Source contains future draw results');
+  if(latest<expectedDrawDate()) throw new Error(`Stale draw data: latest ${latest}, expected ${expectedDrawDate()}. Keeping existing files.`);
+  // Reject missing periods in the newly fetched range (year resets are allowed).
+  for(let i=1;i<rows.length;i++) {
+    if(dateKey(rows[i])<=dateKey(oldRows.at(-1))) continue;
+    const prev=Number(rows[i-1][8]), next=Number(rows[i][8]);
+    if(Math.floor(prev/1000)===Math.floor(next/1000)&&next!==prev+1) throw new Error('Missing draw periods; refusing partial catch-up');
+  }
 
   /* ── 預測凍結 ─────────────────────────────────────────────────────────
      原則：
@@ -147,7 +189,7 @@ async function main() {
   // Sort preds by date
   const sortedPreds = Object.fromEntries(Object.entries(preds).sort(([a],[b])=>a.localeCompare(b)));
 
-  const payload = { source, updatedAt: new Date().toISOString(), rows };
+  const payload = { source: fetched.source, updatedAt: new Date().toISOString(), latestDrawDate: latest, rows };
   await fs.mkdir(path.dirname(dataPath), { recursive: true });
   await fs.writeFile(dataPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
   if (predsChanged) {
@@ -157,4 +199,6 @@ async function main() {
   console.log(`Updated ${dataPath} with ${rows.length} rows; latest period ${rows.at(-1)?.[8] || 'n/a'}`);
 }
 
-main().catch((error) => { console.error(error); process.exit(1); });
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => { console.error(error); process.exitCode = 1; });
+}
