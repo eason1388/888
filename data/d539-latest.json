@@ -1,7 +1,7 @@
 {
   "source": "https://api.taiwanlottery.com/TLCAPIWeB/Lottery/Daily539Result",
-  "updatedAt": "2026-11-27T05:16:55.510Z",
-  "latestDrawDate": "2026-11-26",
+  "updatedAt": "2026-11-27T22:17:26.006Z",
+  "latestDrawDate": "2026-11-27",
   "rows": [
     [
       2026,
@@ -2158,6 +2158,17 @@
       21,
       36,
       "115286"
+    ],
+    [
+      2026,
+      11,
+      27,
+      8,
+      21,
+      28,
+      35,
+      39,
+      "115287"
     ]
   ]
 }
